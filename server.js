@@ -8,22 +8,17 @@ import { fileURLToPath } from 'url';
 
 // --- Configuración Inicial ---
 const app = express();
-const port = process.env.PORT || 3001; // Render usa la variable de entorno PORT para desplegar
-
-// Configuración para poder usar __dirname en los módulos ES6 de Node.js
+const port = process.env.PORT || 3001;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- Middlewares (ayudantes) ---
-app.use(cors()); // Habilita CORS para todas las rutas
-app.use(express.json()); // Permite al servidor entender JSON
-
-// Configuración de Multer para manejar la subida de archivos en memoria
+// --- Middlewares ---
+app.use(cors());
+app.use(express.json());
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 // --- Ruta de la API para Procesar Facturas ---
-// Esta es la lógica de tu antiguo archivo /api/procesar-factura.ts, ahora en Express
 app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
     console.log("Recibida petición para procesar factura...");
 
@@ -33,7 +28,6 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         return res.status(500).json({ error: 'API Key no configurada en el servidor.' });
     }
     
-    // El middleware 'upload.single('file')' pone el archivo en req.file
     if (!req.file) {
         console.error("Error: No se recibió ningún archivo en la petición.");
         return res.status(400).json({ error: 'No se recibió ningún archivo.' });
@@ -41,7 +35,6 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
 
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
-        // Usamos un modelo más reciente y robusto, como gemini-1.5-flash
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         const prompt = req.body.prompt || `
@@ -67,7 +60,6 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         const result = await model.generateContent([prompt, imagePart]);
         const responseText = result.response.text();
         
-        // Limpiamos la respuesta por si Gemini devuelve ```json markdown
         const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
         const jsonData = JSON.parse(cleanedText);
 
@@ -82,12 +74,13 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
 
 
 // --- Servir la Aplicación de React ---
-// 1. Le decimos a Express que todos los archivos en la carpeta 'dist' son públicos
+// 1. Sirve los archivos estáticos generados por 'npm run build' desde la carpeta 'dist'
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// 2. Para cualquier otra petición que no sea a la API, devolvemos el index.html
-// Esto permite que React Router (si lo tuvieras) maneje las rutas del frontend.
-app.get('*', (req, res) => {
+// 2. CORRECCIÓN: Esta ruta "catch-all" ahora sirve el index.html para cualquier
+//    petición que no haya sido manejada por las rutas anteriores (como la API).
+//    Esto es crucial para que el enrutamiento de React funcione en producción.
+app.get(/^(?!\/api).*/, (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 

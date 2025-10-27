@@ -35,8 +35,7 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-        // --- PROMPT MEJORADO ---
-        // Le especificamos los nombres de campo exactos en inglés (camelCase)
+        // Prompt mejorado para guiar a la IA
         const prompt = req.body.prompt || `
             Analiza esta factura. Extrae la información y devuélvela en formato JSON usando EXACTAMENTE los siguientes nombres de campo:
             - invoiceNumber (string)
@@ -47,8 +46,6 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
             - ivaPerception (number o null)
             - grossIncomePerception (number o null)
             - items (array de objetos, cada uno con: quantity, description, unitPrice, total)
-            
-            Es crucial que los nombres de las claves en el JSON sean los especificados (ej. 'invoiceNumber', no 'numero_factura').
         `;
 
         const imagePart = {
@@ -67,39 +64,56 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
         let jsonData = JSON.parse(cleanedText);
 
-        // --- LÓGICA DE NORMALIZACIÓN (NUEVO) ---
-        // Esta función busca varios nombres posibles y los unifica a lo que el frontend espera.
+        // --- FUNCIÓN DE NORMALIZACIÓN COMPLETA ---
         const normalizeData = (data) => {
-            const normalized = { ...data };
+            const normalized = {};
+
+            // Mapeo de claves flexibles (de español/variado a camelCase en inglés)
+            const keyMap = {
+                invoiceNumber: ['invoiceNumber', 'numero_factura', 'numero_comprobante', 'Número de Factura/Comprobante'],
+                invoiceDate: ['invoiceDate', 'fecha_factura', 'Fecha de la Factura'],
+                supplierName: ['supplierName', 'emisor_nombre', 'nombre_emisor', 'emisor_nombre_razon_social', 'Nombre o Razón Social del emisor'],
+                cuit: ['cuit', 'emisor_cuit', 'cuit_emisor', 'CUIT del emisor'],
+                totalAmount: ['totalAmount', 'importe_total', 'Importe Total'],
+                ivaPerception: ['ivaPerception', 'percepcion_iva', 'percepciones_iva', 'Percepciones de IVA'],
+                grossIncomePerception: ['grossIncomePerception', 'percepcion_ingresos_brutos', 'percepciones_ingresos_brutos', 'Percepciones de Ingresos Brutos'],
+                items: ['items']
+            };
             
-            // Unificar número de factura
-            const invoiceKey = Object.keys(normalized).find(k => k.toLowerCase().includes('factura') || k.toLowerCase().includes('comprobante'));
-            if (invoiceKey && invoiceKey !== 'invoiceNumber') {
-                normalized.invoiceNumber = normalized[invoiceKey];
-                delete normalized[invoiceKey];
+            // "Traduce" las claves del nivel principal
+            for (const [targetKey, possibleKeys] of Object.entries(keyMap)) {
+                for (const possibleKey of possibleKeys) {
+                    if (data[possibleKey] !== undefined) {
+                        normalized[targetKey] = data[possibleKey];
+                        break;
+                    }
+                }
             }
 
-            // Unificar CUIT y otros campos si es necesario (puedes expandir esto)
-            const cuitKey = Object.keys(normalized).find(k => k.toLowerCase().includes('cuit'));
-            if (cuitKey && cuitKey !== 'cuit') {
-                normalized.cuit = normalized[cuitKey];
-                delete normalized[cuitKey];
+            // "Traduce" las claves dentro de cada objeto en el array 'items'
+            if (Array.isArray(normalized.items)) {
+                normalized.items = normalized.items.map(item => ({
+                    quantity: item.cantidad || item.quantity,
+                    description: item.descripcion || item.description,
+                    unitPrice: item.precio_unitario || item.unitPrice,
+                    total: item.importe_total || item.importe_total_item || item.total
+                }));
             }
-            
+
             return normalized;
         };
         
         jsonData = normalizeData(jsonData);
 
-        // --- VALIDACIÓN MEJORADA ---
+        // Validación final con los datos ya normalizados
         if (!jsonData || !jsonData.invoiceNumber || !Array.isArray(jsonData.items)) {
-            console.error("Error: La estructura de datos sigue siendo inválida después de normalizar.", jsonData);
+            console.error("Error: Estructura inválida después de normalizar.", jsonData);
             return res.status(502).json({ 
-                error: 'La IA devolvió datos inconsistentes. Revisa los logs para más detalles.' 
+                error: 'La IA devolvió datos inconsistentes. Revisa los logs.' 
             });
         }
 
-        console.log("Procesamiento exitoso.");
+        console.log("Procesamiento exitoso. Datos normalizados enviados al frontend:", jsonData);
         res.status(200).json(jsonData);
 
     } catch (error) {

@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/procesar-factura.ts": {
+      "maxDuration": 60
+    }
+  }
+}

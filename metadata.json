@@ -1,0 +1,5 @@
+{
+  "name": "Test 2 para ocr",
+  "description": "An intelligent web application to automatically extract data from invoices and receipts using AI. Users can upload an image, validate the extracted data in a user-friendly interface, and export the final results to a CSV file, streamlining data entry processes.",
+  "requestFramePermissions": []
+}

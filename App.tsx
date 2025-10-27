@@ -1,6 +1,4 @@
-
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { extractInvoiceData } from './services/geminiService';
 import type { InvoiceData, LineItem, MasterDatabase } from './types';
 import { AppState } from './types';
 import MasterUploader from './components/MasterUploader';
@@ -10,8 +8,50 @@ import DataForm, { DataFormHandle } from './components/DataForm';
 import Spinner from './components/Spinner';
 import { findBestMatch } from './utils/stringMatcher';
 import { LogoIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, CheckCircleIcon } from './components/icons';
-import { isPdfTextBased, extractTextFromPdf } from './services/pdfUtils';
 import ResizablePanels from './components/ResizablePanels';
+
+// @ts-nocheck
+declare var pdfjsLib: any;
+
+// --- FUNCIÓN DE SANITIZACIÓN DE PDF ---
+const sanitizePdf = async (file: File): Promise<File> => {
+    console.log("Sanitizando PDF:", file.name);
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const typedarray = new Uint8Array(arrayBuffer);
+        const pdf = await pdfjsLib.getDocument(typedarray).promise;
+        const page = await pdf.getPage(1);
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error("No se pudo obtener el contexto del canvas.");
+
+        const scale = 2.0;
+        const viewport = page.getViewport({ scale });
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+        const blob = await new Promise<Blob | null>((resolve) => {
+            canvas.toBlob(resolve, 'image/jpeg', 0.95);
+        });
+
+        if (!blob) throw new Error("Fallo al convertir el canvas a blob.");
+
+        const sanitizedFile = new File([blob], `sanitized_${file.name.replace(/\.pdf$/i, '.jpg')}`, {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+        });
+
+        console.log("Sanitización exitosa, nuevo archivo:", sanitizedFile.name);
+        return sanitizedFile;
+    } catch (error) {
+        console.error("Falló la sanitización del PDF, se subirá el archivo original como fallback.", error);
+        return file;
+    }
+};
+
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.AWAITING_MASTER_DATA);
@@ -20,7 +60,6 @@ const App: React.FC = () => {
   const [processedFiles, setProcessedFiles] = useState<File[]>([]);
   const [failedFiles, setFailedFiles] = useState<{ name: string; reason: string }[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [processingFileCount, setProcessingFileCount] = useState(0);
   const [processingStatus, setProcessingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAppReady, setIsAppReady] = useState(false);
@@ -58,40 +97,38 @@ const App: React.FC = () => {
 
   const handleFilesUpload = useCallback(async (files: File[]) => {
     if (!masterData) {
-      setError("Master product database is not loaded.");
+      setError("La base de datos maestra no está cargada.");
       setAppState(AppState.ERROR);
       return;
     }
 
-    setProcessingFileCount(files.length);
     setAppState(AppState.PROCESSING);
     setError(null);
-    setProcessingStatus(null);
+    setProcessingStatus(`Preparando y procesando ${files.length} documentos...`);
 
-    const successfulInvoices: InvoiceData[] = [];
-    const successfulFiles: File[] = [];
-    const failed: { name: string; reason: string }[] = [];
+    const fileProcessingPromises = files.map(async (file) => {
+      let fileToUpload = file;
+      if (file.type === 'application/pdf') {
+        fileToUpload = await sanitizePdf(file);
+      }
+        
+      const formData = new FormData();
+      formData.append('file', fileToUpload);
 
-    for (const [index, file] of files.entries()) {
-      setProcessingStatus(`Procesando factura ${index + 1} de ${files.length}...`);
       try {
-        let ocrData;
-        if (file.type === 'application/pdf') {
-          const isText = await isPdfTextBased(file);
-          if (isText) {
-            console.log(`[Router] File ${file.name} is a text-based PDF. Extracting text.`);
-            const text = await extractTextFromPdf(file);
-            ocrData = await extractInvoiceData(text);
-          } else {
-            console.log(`[Router] File ${file.name} is an image-based PDF. Sending for OCR.`);
-            ocrData = await extractInvoiceData(file);
-          }
-        } else {
-          console.log(`[Router] File ${file.name} is an image. Sending for OCR.`);
-          ocrData = await extractInvoiceData(file);
+        const response = await fetch('/api/procesar-factura', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Error desconocido del servidor.' }));
+          throw new Error(errorData.error);
         }
 
-        const normalizedCuit = ocrData.cuit.replace(/-/g, '');
+        const ocrData = await response.json();
+        
+        const normalizedCuit = (ocrData.cuit || '').replace(/-/g, '');
         let identifiedSupplierCuit: string | undefined = undefined;
 
         for (const [keyCuit] of masterData.entries()) {
@@ -102,65 +139,64 @@ const App: React.FC = () => {
         }
 
         const supplierInfo = identifiedSupplierCuit ? masterData.get(identifiedSupplierCuit) : undefined;
-
-        const matchedItems: LineItem[] = ocrData.items.map((ocrItem, itemIndex) => {
+        const matchedItems: LineItem[] = (ocrData.items || []).map((ocrItem: any, itemIndex: number) => {
           const defaultItem = {
             id: `item-${Date.now()}-${itemIndex}`,
-            ocrDescription: ocrItem.description,
-            ocrQuantity: ocrItem.quantity,
-            ocrUnitPrice: ocrItem.unitPrice,
-            productCode: '',
-            productName: 'N/A',
-            quantity: ocrItem.quantity,
-            unitPrice: ocrItem.unitPrice,
-            total: ocrItem.total,
+            ocrDescription: ocrItem.description, ocrQuantity: ocrItem.quantity, ocrUnitPrice: ocrItem.unitPrice,
+            productCode: '', productName: 'N/A',
+            quantity: ocrItem.quantity, unitPrice: ocrItem.unitPrice, total: ocrItem.total,
           };
-
           if (supplierInfo) {
-            const productCandidates: { productCode: string; productName: string }[] = supplierInfo.products;
-            const bestMatch = findBestMatch(ocrItem.description, productCandidates, p => p.productName);
+            // --- CORRECCIÓN DE TYPESCRIPT AQUÍ ---
+            // Añadimos el tipo explícito a 'p' para ayudar a TypeScript
+            const bestMatch = findBestMatch(
+              ocrItem.description, 
+              supplierInfo.products, 
+              (p: { productCode: string; productName: string }) => p.productName
+            );
             if (bestMatch) {
-              return {
-                ...defaultItem,
-                productCode: bestMatch.bestMatch.productCode,
-                productName: bestMatch.bestMatch.productName,
-              };
+              return { ...defaultItem, productCode: bestMatch.bestMatch.productCode, productName: bestMatch.bestMatch.productName };
             }
           }
           return defaultItem;
         });
-
-        successfulInvoices.push({ ...ocrData, items: matchedItems, identifiedSupplierCuit, usePreloadedCatalog: false });
-        successfulFiles.push(file);
+        
+        const finalInvoiceData: InvoiceData = { ...ocrData, items: matchedItems, identifiedSupplierCuit, usePreloadedCatalog: false };
+        
+        return { success: true, file, data: finalInvoiceData };
 
       } catch (error) {
-        failed.push({
-          name: file.name,
-          reason: error instanceof Error ? error.message : 'Unknown error',
-        });
+        const reason = error instanceof Error ? error.message : 'Error desconocido';
+        return { success: false, file, reason };
       }
-    }
-    
+    });
+
+    const results = await Promise.all(fileProcessingPromises);
+
+    const successfulInvoices = results.filter(r => r.success).map(r => r.data as InvoiceData);
+    const successfulFiles = results.filter(r => r.success).map(r => r.file);
+    const failedFilesResult = results.filter(r => !r.success).map(r => ({ name: r.file.name, reason: r.reason as string }));
+
     setProcessingStatus(null);
     setBatchData(successfulInvoices);
     setProcessedFiles(successfulFiles);
-    setFailedFiles(failed);
+    setFailedFiles(failedFilesResult);
 
     if (successfulInvoices.length > 0) {
       setCurrentIndex(0);
       setAppState(AppState.REVIEWING);
     } else {
-      setError(`Failed to process all ${files.length} documents.`);
+      setError(`Falló el procesamiento de los ${files.length} documentos.`);
       setAppState(AppState.ERROR);
     }
   }, [masterData]);
+
 
   const handleFullReset = useCallback(() => {
     setBatchData([]);
     setProcessedFiles([]);
     setFailedFiles([]);
     setCurrentIndex(0);
-    setProcessingFileCount(0);
     setProcessingStatus(null);
     setError(null);
     setMasterData(null);
@@ -173,7 +209,6 @@ const App: React.FC = () => {
     setProcessedFiles([]);
     setFailedFiles([]);
     setCurrentIndex(0);
-    setProcessingFileCount(0);
     setProcessingStatus(null);
     setError(null);
     setAppState(AppState.IDLE);
@@ -200,56 +235,36 @@ const App: React.FC = () => {
   };
 
   const exportAllToCsv = () => {
-    // 1. Guardar explícitamente el estado actual del formulario
-    // Esto llama a onDataChange y actualiza el estado 'batchData' de React.
     if (dataFormRef.current) {
         dataFormRef.current.save();
     }
-
-    // 2. Usar una función de callback con setBatchData para garantizar que usamos el estado más reciente
     setBatchData(currentBatchData => {
-        
-        // 3. Ahora 'currentBatchData' es la versión más fresca y segura del estado
         if (currentBatchData.length === 0) return currentBatchData;
-
         const headers = ['Numero_Factura', 'Fecha_Factura', 'Fecha_Registro', 'Cod_Producto', 'Cantidad_Final', 'Precio_Final', 'Importe_Final'];
         const today = new Date().toISOString().split('T')[0];
-
         const allRows = currentBatchData.flatMap(invoice =>
             invoice.items
                 .filter(item => item.productCode && item.quantity > 0)
                 .map(item => [
-                    invoice.invoiceNumber,
-                    invoice.invoiceDate,
-                    today,
-                    item.productCode,
-                    item.quantity,
-                    item.unitPrice,
-                    item.total,
+                    invoice.invoiceNumber, invoice.invoiceDate, today,
+                    item.productCode, item.quantity, item.unitPrice, item.total,
                 ].join(','))
         );
-
         if (allRows.length === 0) {
-            alert("No valid items to export. Please ensure products are mapped and quantities are greater than zero.");
-            return currentBatchData; // Devuelve el estado sin cambios
+            alert("No hay items válidos para exportar.");
+            return currentBatchData;
         }
-
         const csvContent = [headers.join(','), ...allRows].join('\n');
         const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.href = url;
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        link.setAttribute('download', `facturas_export_${timestamp}.csv`);
+        link.setAttribute('download', `facturas_export_${new Date().toISOString()}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        
-        // Actualizar el estado de la aplicación para mostrar el mensaje de éxito
         setAppState(AppState.EXPORTED);
-        
-        return currentBatchData; // Devuelve el estado sin cambios
+        return currentBatchData;
     });
   };
 
@@ -273,9 +288,7 @@ const App: React.FC = () => {
         return (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Spinner />
-            <p className="text-slate-600 mt-4 text-lg">
-              {processingStatus || `Analizando ${processingFileCount} documentos...`}
-            </p>
+            <p className="text-slate-600 mt-4 text-lg">{processingStatus || `Analizando documentos...`}</p>
             <p className="text-slate-500 mt-1">Esto puede tomar unos momentos. ¡La IA está haciendo su magia!</p>
           </div>
         );
@@ -286,13 +299,11 @@ const App: React.FC = () => {
           <div className="flex flex-col w-full h-full p-4 md:p-8">
             <div className="flex-shrink-0 flex flex-col sm:flex-row items-center justify-between mb-4 pb-4 border-b border-slate-200 gap-4">
               <div className="flex items-center gap-4">
-                <button onClick={handlePrev} disabled={currentIndex === 0} className="p-2 rounded-md bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                <button onClick={handlePrev} disabled={currentIndex === 0} className="p-2 rounded-md bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-50">
                   <ChevronLeftIcon className="w-5 h-5" />
                 </button>
-                <span className="font-medium text-slate-700 whitespace-nowrap">
-                  Factura {currentIndex + 1} de {batchData.length}
-                </span>
-                <button onClick={handleNext} disabled={currentIndex === batchData.length - 1} className="p-2 rounded-md bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                <span className="font-medium text-slate-700">Factura {currentIndex + 1} de {batchData.length}</span>
+                <button onClick={handleNext} disabled={currentIndex === batchData.length - 1} className="p-2 rounded-md bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-50">
                   <ChevronRightIcon className="w-5 h-5" />
                 </button>
               </div>
@@ -302,10 +313,7 @@ const App: React.FC = () => {
                   <span>¡Exportación Exitosa!</span>
                 </div>
               ) : (
-                 <button
-                    onClick={exportAllToCsv}
-                    className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 transition-colors flex items-center gap-2"
-                 >
+                 <button onClick={exportAllToCsv} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 flex items-center gap-2">
                     <DownloadIcon className="w-5 h-5"/>
                     Exportar Todo a CSV
                  </button>
@@ -323,7 +331,6 @@ const App: React.FC = () => {
                <ResizablePanels
                   leftPanel={<InvoiceDisplay file={currentFile} />}
                   rightPanel={<DataForm ref={dataFormRef} data={currentInvoice} onDataChange={handleUpdateInvoiceData} masterData={masterData} />}
-                  initialRightPanelWidth={66.66}
                />
             </div>
           </div>
@@ -335,16 +342,13 @@ const App: React.FC = () => {
             <p className="text-slate-700 bg-red-100 p-4 rounded-lg">{error}</p>
             {failedFiles.length > 0 && (
               <div className="mt-4 text-left bg-slate-100 p-4 rounded-md w-full max-w-md">
-                <p className="font-semibold mb-2">Detalles:</p>
+                <p className="font-semibold mb-2">Detalles de archivos fallidos:</p>
                 <ul className="list-disc list-inside text-sm text-slate-600">
                   {failedFiles.map(f => <li key={f.name}><strong>{f.name}:</strong> {f.reason}</li>)}
                 </ul>
               </div>
             )}
-            <button
-              onClick={handleFullReset}
-              className="mt-6 px-6 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 transition-colors"
-            >
+            <button onClick={handleFullReset} className="mt-6 px-6 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700">
               Empezar de Nuevo
             </button>
           </div>
@@ -365,16 +369,10 @@ const App: React.FC = () => {
             </div>
              { (appState !== AppState.AWAITING_MASTER_DATA && appState !== AppState.IDLE) && (
                 <div className="flex items-center gap-3">
-                  <button 
-                    onClick={handleResetBatch} 
-                    className="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-md hover:bg-slate-200 transition-colors text-sm"
-                  >
+                  <button onClick={handleResetBatch} className="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-md hover:bg-slate-200 text-sm">
                       Iniciar Nuevo Lote
                   </button>
-                   <button 
-                    onClick={handleFullReset} 
-                    className="px-4 py-2 bg-amber-100 text-amber-800 font-semibold rounded-md hover:bg-amber-200 transition-colors text-sm"
-                  >
+                   <button onClick={handleFullReset} className="px-4 py-2 bg-amber-100 text-amber-800 font-semibold rounded-md hover:bg-amber-200 text-sm">
                       Actualizar Base de Datos
                   </button>
                 </div>

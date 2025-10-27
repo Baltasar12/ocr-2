@@ -24,12 +24,10 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-        console.error("Error: La API Key de Gemini no está configurada.");
-        return res.status(500).json({ error: 'API Key no configurada en el servidor.' });
+        return res.status(500).json({ error: 'API Key no configurada.' });
     }
     
     if (!req.file) {
-        console.error("Error: No se recibió ningún archivo en la petición.");
         return res.status(400).json({ error: 'No se recibió ningún archivo.' });
     }
 
@@ -37,16 +35,20 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
+        // --- PROMPT MEJORADO ---
+        // Le especificamos los nombres de campo exactos en inglés (camelCase)
         const prompt = req.body.prompt || `
-            Analiza los datos de esta factura o remito. Extrae la siguiente información y devuélvela estrictamente en formato JSON.
-            - Número de Factura/Comprobante
-            - Fecha de la Factura (formato YYYY-MM-DD)
-            - Nombre o Razón Social del emisor
-            - CUIT del emisor
-            - Importe Total
-            - Percepciones de IVA e Ingresos Brutos (si están presentes)
-            - Lista detallada de todos los ítems, con su cantidad, descripción, precio unitario e importe total.
-            Si un campo opcional como una percepción no se encuentra, su valor debe ser null. Los campos obligatorios son 'invoiceNumber' y 'items'. Si no puedes encontrar alguno de estos, devuelve un error.
+            Analiza esta factura. Extrae la información y devuélvela en formato JSON usando EXACTAMENTE los siguientes nombres de campo:
+            - invoiceNumber (string)
+            - invoiceDate (string, formato YYYY-MM-DD)
+            - supplierName (string)
+            - cuit (string)
+            - totalAmount (number)
+            - ivaPerception (number o null)
+            - grossIncomePerception (number o null)
+            - items (array de objetos, cada uno con: quantity, description, unitPrice, total)
+            
+            Es crucial que los nombres de las claves en el JSON sean los especificados (ej. 'invoiceNumber', no 'numero_factura').
         `;
 
         const imagePart = {
@@ -56,30 +58,53 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
             },
         };
 
-        console.log(`Enviando archivo ${req.file.originalname} a la API de Gemini...`);
+        console.log(`Enviando archivo ${req.file.originalname} a Gemini...`);
         const result = await model.generateContent([prompt, imagePart]);
         const responseText = result.response.text();
         
-        console.log("Respuesta cruda de Gemini:", responseText); // <-- LOG IMPORTANTE
+        console.log("Respuesta cruda de Gemini:", responseText);
 
         const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        const jsonData = JSON.parse(cleanedText);
+        let jsonData = JSON.parse(cleanedText);
 
-        // --- NUEVA VALIDACIÓN EN EL BACKEND ---
+        // --- LÓGICA DE NORMALIZACIÓN (NUEVO) ---
+        // Esta función busca varios nombres posibles y los unifica a lo que el frontend espera.
+        const normalizeData = (data) => {
+            const normalized = { ...data };
+            
+            // Unificar número de factura
+            const invoiceKey = Object.keys(normalized).find(k => k.toLowerCase().includes('factura') || k.toLowerCase().includes('comprobante'));
+            if (invoiceKey && invoiceKey !== 'invoiceNumber') {
+                normalized.invoiceNumber = normalized[invoiceKey];
+                delete normalized[invoiceKey];
+            }
+
+            // Unificar CUIT y otros campos si es necesario (puedes expandir esto)
+            const cuitKey = Object.keys(normalized).find(k => k.toLowerCase().includes('cuit'));
+            if (cuitKey && cuitKey !== 'cuit') {
+                normalized.cuit = normalized[cuitKey];
+                delete normalized[cuitKey];
+            }
+            
+            return normalized;
+        };
+        
+        jsonData = normalizeData(jsonData);
+
+        // --- VALIDACIÓN MEJORADA ---
         if (!jsonData || !jsonData.invoiceNumber || !Array.isArray(jsonData.items)) {
-            console.error("Error: La respuesta de Gemini no tiene la estructura esperada.", jsonData);
-            // Devolvemos un error 502 (Bad Gateway) que significa que recibimos una respuesta inválida de un servidor upstream (Gemini).
+            console.error("Error: La estructura de datos sigue siendo inválida después de normalizar.", jsonData);
             return res.status(502).json({ 
-                error: 'La IA devolvió una estructura de datos inválida o incompleta. Revisa los logs del servidor para ver la respuesta completa.' 
+                error: 'La IA devolvió datos inconsistentes. Revisa los logs para más detalles.' 
             });
         }
 
-        console.log("Procesamiento con Gemini exitoso.");
+        console.log("Procesamiento exitoso.");
         res.status(200).json(jsonData);
 
     } catch (error) {
-        console.error('Error procesando con la IA:', error);
-        res.status(500).json({ error: 'Error interno del servidor al procesar con la IA.' });
+        console.error('Error en el backend:', error);
+        res.status(500).json({ error: 'Error interno del servidor.' });
     }
 });
 

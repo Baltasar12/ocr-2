@@ -46,7 +46,7 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
             - Importe Total
             - Percepciones de IVA e Ingresos Brutos (si están presentes)
             - Lista detallada de todos los ítems, con su cantidad, descripción, precio unitario e importe total.
-            Si un campo opcional como una percepción no se encuentra, su valor debe ser null.
+            Si un campo opcional como una percepción no se encuentra, su valor debe ser null. Los campos obligatorios son 'invoiceNumber' y 'items'. Si no puedes encontrar alguno de estos, devuelve un error.
         `;
 
         const imagePart = {
@@ -60,8 +60,19 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         const result = await model.generateContent([prompt, imagePart]);
         const responseText = result.response.text();
         
+        console.log("Respuesta cruda de Gemini:", responseText); // <-- LOG IMPORTANTE
+
         const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
         const jsonData = JSON.parse(cleanedText);
+
+        // --- NUEVA VALIDACIÓN EN EL BACKEND ---
+        if (!jsonData || !jsonData.invoiceNumber || !Array.isArray(jsonData.items)) {
+            console.error("Error: La respuesta de Gemini no tiene la estructura esperada.", jsonData);
+            // Devolvemos un error 502 (Bad Gateway) que significa que recibimos una respuesta inválida de un servidor upstream (Gemini).
+            return res.status(502).json({ 
+                error: 'La IA devolvió una estructura de datos inválida o incompleta. Revisa los logs del servidor para ver la respuesta completa.' 
+            });
+        }
 
         console.log("Procesamiento con Gemini exitoso.");
         res.status(200).json(jsonData);
@@ -72,14 +83,8 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
     }
 });
 
-
 // --- Servir la Aplicación de React ---
-// 1. Sirve los archivos estáticos generados por 'npm run build' desde la carpeta 'dist'
 app.use(express.static(path.join(__dirname, 'dist')));
-
-// 2. CORRECCIÓN: Esta ruta "catch-all" ahora sirve el index.html para cualquier
-//    petición que no haya sido manejada por las rutas anteriores (como la API).
-//    Esto es crucial para que el enrutamiento de React funcione en producción.
 app.get(/^(?!\/api).*/, (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });

@@ -6,13 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.js"
   },
   "dependencies": {
     "@google/genai": "^1.20.0",
     "@google/generative-ai": "^0.24.1",
     "@vercel/kv": "^3.0.0",
     "browser-image-compression": "^2.0.2",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

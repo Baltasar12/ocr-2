@@ -35,7 +35,7 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
 
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         const prompt = req.body.prompt || `
             Analiza los datos de esta factura o remito. Extrae la siguiente información y devuélvela estrictamente en formato JSON.

@@ -14,44 +14,39 @@ import ResizablePanels from './components/ResizablePanels';
 declare var pdfjsLib: any;
 
 const sanitizePdf = async (file: File): Promise<File> => {
-    console.log("Intentando sanitizar PDF:", file.name);
     try {
         const arrayBuffer = await file.arrayBuffer();
         const typedarray = new Uint8Array(arrayBuffer);
         const pdf = await pdfjsLib.getDocument(typedarray).promise;
         const page = await pdf.getPage(1);
-
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         if (!context) throw new Error("No se pudo obtener el contexto del canvas.");
-
         const scale = 2.0;
         const viewport = page.getViewport({ scale });
         canvas.height = viewport.height;
         canvas.width = viewport.width;
-
         await page.render({ canvasContext: context, viewport: viewport }).promise;
-
-        const blob = await new Promise<Blob | null>((resolve) => {
-            canvas.toBlob(resolve, 'image/jpeg', 0.95);
-        });
-
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
         if (!blob) throw new Error("Fallo al convertir el canvas a blob.");
-
-        const sanitizedFile = new File([blob], `sanitized_${file.name.replace(/\.pdf$/i, '.jpg')}`, {
-            type: 'image/jpeg',
-            lastModified: Date.now(),
-        });
-
-        console.log("Sanitización exitosa.");
-        return sanitizedFile;
+        return new File([blob], `sanitized_${file.name.replace(/\.pdf$/i, '.jpg')}`, { type: 'image/jpeg' });
     } catch (error) {
-        // MEJORA: Log más detallado en la consola del navegador
         console.error(`Falló la sanitización del PDF '${file.name}'. Razón:`, error);
-        // Devolvemos el archivo original como último recurso.
         return file;
     }
 };
+
+async function processInChunks<T, R>(items: T[], chunkSize: number, processor: (item: T) => Promise<R>): Promise<R[]> {
+    const results: R[] = [];
+    for (let i = 0; i < items.length; i += chunkSize) {
+        const chunk = items.slice(i, i + chunkSize);
+        console.log(`Procesando lote: ${i / chunkSize + 1} de ${Math.ceil(items.length / chunkSize)}`);
+        const chunkPromises = chunk.map(processor);
+        const chunkResults = await Promise.all(chunkPromises);
+        results.push(...chunkResults);
+    }
+    return results;
+}
 
 
 const App: React.FC = () => {
@@ -104,74 +99,64 @@ const App: React.FC = () => {
 
     setAppState(AppState.PROCESSING);
     setError(null);
-    setProcessingStatus(`Preparando y procesando ${files.length} documentos...`);
+    setProcessingStatus(`Procesando ${files.length} documentos...`);
 
-    const fileProcessingPromises = files.map(async (file) => {
-      try {
-        let fileToUpload = file;
-        if (file.type === 'application/pdf') {
-          fileToUpload = await sanitizePdf(file);
-        }
-          
-        const formData = new FormData();
-        formData.append('file', fileToUpload);
-
-        const response = await fetch('/api/procesar-factura', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: 'Error del servidor sin JSON.' }));
-          throw new Error(errorData.error);
-        }
-
-        const ocrData = await response.json();
-        
-        const normalizedCuit = (ocrData.cuit || '').replace(/-/g, '');
-        let identifiedSupplierCuit: string | undefined = undefined;
-
-        for (const [keyCuit] of masterData.entries()) {
-          if (keyCuit.replace(/-/g, '') === normalizedCuit) {
-            identifiedSupplierCuit = keyCuit;
-            break;
-          }
-        }
-
-        const supplierInfo = identifiedSupplierCuit ? masterData.get(identifiedSupplierCuit) : undefined;
-        const matchedItems: LineItem[] = (ocrData.items || []).map((ocrItem: any, itemIndex: number) => {
-          const defaultItem = {
-            id: `item-${Date.now()}-${itemIndex}`,
-            ocrDescription: ocrItem.description, ocrQuantity: ocrItem.quantity, ocrUnitPrice: ocrItem.unitPrice,
-            productCode: '', productName: 'N/A',
-            quantity: ocrItem.quantity, unitPrice: ocrItem.unitPrice, total: ocrItem.total,
-          };
-          if (supplierInfo) {
-            const bestMatch = findBestMatch(
-                ocrItem.description, 
-                supplierInfo.products, 
-                (p: { productCode: string; productName: string }) => p.productName
-            );
-            if (bestMatch) {
-              return { ...defaultItem, productCode: bestMatch.bestMatch.productCode, productName: bestMatch.bestMatch.productName };
+    const processSingleFile = async (file: File) => {
+        try {
+            let fileToUpload = file;
+            if (file.type === 'application/pdf') {
+                fileToUpload = await sanitizePdf(file);
             }
-          }
-          return defaultItem;
-        });
-        
-        const finalInvoiceData: InvoiceData = { ...ocrData, items: matchedItems, identifiedSupplierCuit, usePreloadedCatalog: false };
-        
-        return { success: true, file, data: finalInvoiceData };
+            
+            const formData = new FormData();
+            formData.append('file', fileToUpload);
 
-      } catch (error) {
-        // MEJORA: Log del error en la consola del navegador
-        console.error(`Falló el procesamiento del archivo '${file.name}'. Razón:`, error);
-        const reason = error instanceof Error ? error.message : 'Error desconocido';
-        return { success: false, file, reason };
-      }
-    });
+            const response = await fetch('/api/procesar-factura', { method: 'POST', body: formData });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: `Error del servidor (código ${response.status})` }));
+                throw new Error(errorData.error);
+            }
+            const ocrData = await response.json();
+            const normalizedCuit = (ocrData.cuit || '').replace(/-/g, '');
+            let identifiedSupplierCuit: string | undefined;
+            for (const [keyCuit] of masterData.entries()) {
+                if (keyCuit.replace(/-/g, '') === normalizedCuit) {
+                    identifiedSupplierCuit = keyCuit;
+                    break;
+                }
+            }
+            const supplierInfo = identifiedSupplierCuit ? masterData.get(identifiedSupplierCuit) : undefined;
+            const matchedItems: LineItem[] = (ocrData.items || []).map((ocrItem: any, itemIndex: number) => {
+                const defaultItem = {
+                    id: `item-${Date.now()}-${itemIndex}`,
+                    ocrDescription: ocrItem.description, ocrQuantity: ocrItem.quantity, ocrUnitPrice: ocrItem.unitPrice,
+                    productCode: '', productName: 'N/A',
+                    quantity: ocrItem.quantity, unitPrice: ocrItem.unitPrice, total: ocrItem.total,
+                };
+                if (supplierInfo) {
+                    // --- CORRECCIÓN FINAL DE TYPESCRIPT AQUÍ ---
+                    const bestMatch = findBestMatch(
+                        ocrItem.description, 
+                        supplierInfo.products, 
+                        (p: { productCode: string; productName: string }) => p.productName
+                    );
+                    if (bestMatch) {
+                        return { ...defaultItem, productCode: bestMatch.bestMatch.productCode, productName: bestMatch.bestMatch.productName };
+                    }
+                }
+                return defaultItem;
+            });
+            const finalInvoiceData: InvoiceData = { ...ocrData, items: matchedItems, identifiedSupplierCuit, usePreloadedCatalog: false };
+            return { success: true, file, data: finalInvoiceData };
+        } catch (error) {
+            console.error(`Falló el procesamiento del archivo '${file.name}'. Razón:`, error);
+            const reason = error instanceof Error ? error.message : 'Error desconocido';
+            return { success: false, file, reason };
+        }
+    };
 
-    const results = await Promise.all(fileProcessingPromises);
+    const CHUNK_SIZE = 5; 
+    const results = await processInChunks(files, CHUNK_SIZE, processSingleFile);
 
     const successfulInvoices = results.filter(r => r.success).map(r => r.data as InvoiceData);
     const successfulFiles = results.filter(r => r.success).map(r => r.file);
@@ -192,8 +177,6 @@ const App: React.FC = () => {
   }, [masterData]);
 
 
-  // El resto de las funciones (handleFullReset, exportAllToCsv, render, etc.) se mantienen igual...
-  // ... (pegar aquí el resto de tu App.tsx sin cambios)
   const handleFullReset = useCallback(() => {
     setBatchData([]);
     setProcessedFiles([]);
@@ -355,7 +338,6 @@ const App: React.FC = () => {
             </button>
           </div>
         );
-      case AppState.IDLE:
       default:
         return <ImageUploader onFilesUpload={handleFilesUpload} disabled={false} />;
     }
@@ -365,27 +347,11 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col antialiased text-slate-800">
       <header className="p-4 border-b border-slate-200 bg-white shadow-sm sticky top-0 z-10">
         <div className="container mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3">
-                <LogoIcon className="h-8 w-8 text-indigo-600" />
-                <h1 className="text-2xl font-bold text-slate-800">Factura OCR AI</h1>
-            </div>
-             { (appState !== AppState.AWAITING_MASTER_DATA && appState !== AppState.IDLE) && (
-                <div className="flex items-center gap-3">
-                  <button onClick={handleResetBatch} className="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-md hover:bg-slate-200 text-sm">
-                      Iniciar Nuevo Lote
-                  </button>
-                   <button onClick={handleFullReset} className="px-4 py-2 bg-amber-100 text-amber-800 font-semibold rounded-md hover:bg-amber-200 text-sm">
-                      Actualizar Base de Datos
-                  </button>
-                </div>
-             )}
+            <div className="flex items-center gap-3"><LogoIcon className="h-8 w-8 text-indigo-600" /><h1 className="text-2xl font-bold text-slate-800">Factura OCR AI</h1></div>
+            { (appState !== AppState.AWAITING_MASTER_DATA && appState !== AppState.IDLE) && ( <div className="flex items-center gap-3"><button onClick={handleResetBatch} className="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-md hover:bg-slate-200 text-sm">Iniciar Nuevo Lote</button><button onClick={handleFullReset} className="px-4 py-2 bg-amber-100 text-amber-800 font-semibold rounded-md hover:bg-amber-200 text-sm">Actualizar Base de Datos</button></div> )}
         </div>
       </header>
-      <main className="flex-grow container mx-auto flex items-center justify-center">
-        <div className="w-full h-full max-w-7xl">
-           {renderContent()}
-        </div>
-      </main>
+      <main className="flex-grow container mx-auto flex items-center justify-center"><div className="w-full h-full max-w-7xl">{renderContent()}</div></main>
     </div>
   );
 };

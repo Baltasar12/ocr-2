@@ -13,9 +13,8 @@ import ResizablePanels from './components/ResizablePanels';
 // @ts-nocheck
 declare var pdfjsLib: any;
 
-// --- FUNCIÓN DE SANITIZACIÓN DE PDF ---
 const sanitizePdf = async (file: File): Promise<File> => {
-    console.log("Sanitizando PDF:", file.name);
+    console.log("Intentando sanitizar PDF:", file.name);
     try {
         const arrayBuffer = await file.arrayBuffer();
         const typedarray = new Uint8Array(arrayBuffer);
@@ -44,10 +43,12 @@ const sanitizePdf = async (file: File): Promise<File> => {
             lastModified: Date.now(),
         });
 
-        console.log("Sanitización exitosa, nuevo archivo:", sanitizedFile.name);
+        console.log("Sanitización exitosa.");
         return sanitizedFile;
     } catch (error) {
-        console.error("Falló la sanitización del PDF, se subirá el archivo original como fallback.", error);
+        // MEJORA: Log más detallado en la consola del navegador
+        console.error(`Falló la sanitización del PDF '${file.name}'. Razón:`, error);
+        // Devolvemos el archivo original como último recurso.
         return file;
     }
 };
@@ -78,7 +79,6 @@ const App: React.FC = () => {
       }
     } catch (e) {
       console.error("Failed to load master database from localStorage", e);
-      localStorage.removeItem('masterDatabase');
     } finally {
       setIsAppReady(true);
     }
@@ -107,22 +107,22 @@ const App: React.FC = () => {
     setProcessingStatus(`Preparando y procesando ${files.length} documentos...`);
 
     const fileProcessingPromises = files.map(async (file) => {
-      let fileToUpload = file;
-      if (file.type === 'application/pdf') {
-        fileToUpload = await sanitizePdf(file);
-      }
-        
-      const formData = new FormData();
-      formData.append('file', fileToUpload);
-
       try {
+        let fileToUpload = file;
+        if (file.type === 'application/pdf') {
+          fileToUpload = await sanitizePdf(file);
+        }
+          
+        const formData = new FormData();
+        formData.append('file', fileToUpload);
+
         const response = await fetch('/api/procesar-factura', {
           method: 'POST',
           body: formData,
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: 'Error desconocido del servidor.' }));
+          const errorData = await response.json().catch(() => ({ error: 'Error del servidor sin JSON.' }));
           throw new Error(errorData.error);
         }
 
@@ -147,12 +147,10 @@ const App: React.FC = () => {
             quantity: ocrItem.quantity, unitPrice: ocrItem.unitPrice, total: ocrItem.total,
           };
           if (supplierInfo) {
-            // --- CORRECCIÓN DE TYPESCRIPT AQUÍ ---
-            // Añadimos el tipo explícito a 'p' para ayudar a TypeScript
             const bestMatch = findBestMatch(
-              ocrItem.description, 
-              supplierInfo.products, 
-              (p: { productCode: string; productName: string }) => p.productName
+                ocrItem.description, 
+                supplierInfo.products, 
+                (p: { productCode: string; productName: string }) => p.productName
             );
             if (bestMatch) {
               return { ...defaultItem, productCode: bestMatch.bestMatch.productCode, productName: bestMatch.bestMatch.productName };
@@ -166,6 +164,8 @@ const App: React.FC = () => {
         return { success: true, file, data: finalInvoiceData };
 
       } catch (error) {
+        // MEJORA: Log del error en la consola del navegador
+        console.error(`Falló el procesamiento del archivo '${file.name}'. Razón:`, error);
         const reason = error instanceof Error ? error.message : 'Error desconocido';
         return { success: false, file, reason };
       }
@@ -186,12 +186,14 @@ const App: React.FC = () => {
       setCurrentIndex(0);
       setAppState(AppState.REVIEWING);
     } else {
-      setError(`Falló el procesamiento de los ${files.length} documentos.`);
+      setError(`Falló el procesamiento de todos los ${files.length} documentos.`);
       setAppState(AppState.ERROR);
     }
   }, [masterData]);
 
 
+  // El resto de las funciones (handleFullReset, exportAllToCsv, render, etc.) se mantienen igual...
+  // ... (pegar aquí el resto de tu App.tsx sin cambios)
   const handleFullReset = useCallback(() => {
     setBatchData([]);
     setProcessedFiles([]);

@@ -26,12 +26,10 @@ const fetchWithRetry = async (fn, retries = 3, delay = 2000) => {
       return await fn();
     } catch (error) {
       lastError = error;
-      // Reintentar solo en errores 503 (sobrecarga)
       if (error.status === 503) {
         console.log(`Intento ${i + 1} falló por sobrecarga. Reintentando en ${delay / 1000}s...`);
         await new Promise(res => setTimeout(res, delay));
       } else {
-        // Si es otro error, fallar inmediatamente
         throw error;
       }
     }
@@ -39,69 +37,73 @@ const fetchWithRetry = async (fn, retries = 3, delay = 2000) => {
   throw lastError;
 };
 
+// --- HELPER PARA REPARAR JSON ---
+function repairJson(jsonString) {
+    return jsonString
+        // Añadir comillas a claves sin comillas (ej: { key: "value" })
+        .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
+        // Reemplazar comillas simples por comillas dobles
+        .replace(/'/g, '"')
+        // Eliminar comas finales en objetos y arrays (ej: { "a": 1, })
+        .replace(/,\s*([}\]])/g, '$1');
+}
+
 // --- Ruta de la API para Procesar Facturas ---
 app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
     console.log("Recibida petición para procesar factura...");
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-        return res.status(500).json({ error: 'API Key no configurada.' });
-    }
-    if (!req.file) {
-        return res.status(400).json({ error: 'No se recibió ningún archivo.' });
-    }
+    if (!apiKey) return res.status(500).json({ error: 'API Key no configurada.' });
+    if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo.' });
 
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const prompt = req.body.prompt || `
-            Analiza esta factura. Extrae la información y devuélvela en formato JSON usando EXACTAMENTE los siguientes nombres de campo:
-            - invoiceNumber (string), invoiceDate (string, formato YYYY-MM-DD), supplierName (string), cuit (string),
-            - totalAmount (number), ivaPerception (number o null), grossIncomePerception (number o null)
+            Analiza esta factura. Extrae la información y devuélvela en formato JSON usando EXACTAMENTE los siguientes nombres de campo en camelCase:
+            - invoiceNumber, invoiceDate, supplierName, cuit, totalAmount, ivaPerception, grossIncomePerception
             - items (array de objetos, cada uno con: quantity, description, unitPrice, total)
         `;
         const imagePart = { inlineData: { data: req.file.buffer.toString("base64"), mimeType: req.file.mimetype } };
 
         console.log(`Enviando archivo ${req.file.originalname} a Gemini...`);
 
-        // Usamos la función con reintentos
         const result = await fetchWithRetry(() => model.generateContent([prompt, imagePart]));
         const responseText = result.response.text();
         
         console.log("Respuesta cruda de Gemini:", responseText);
         const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        let jsonData = JSON.parse(cleanedText);
+        
+        // Usamos el reparador antes de parsear
+        const repairedText = repairJson(cleanedText);
+        let jsonData = JSON.parse(repairedText);
 
         const normalizeData = (data) => {
             const normalized = {};
-            // Función para encontrar una clave sin importar mayúsculas/minúsculas
-            const findKey = (obj, keys) => {
+            const findValue = (obj, keys) => {
                 const lowerCaseKeys = keys.map(k => k.toLowerCase());
                 for (const key in obj) {
-                    if (lowerCaseKeys.includes(key.toLowerCase())) {
-                        return obj[key];
-                    }
+                    if (lowerCaseKeys.includes(key.toLowerCase())) return obj[key];
                 }
                 return undefined;
             };
 
-            normalized.invoiceNumber = findKey(data, ['invoiceNumber', 'numero_factura', 'numero_comprobante']);
-            normalized.invoiceDate = findKey(data, ['invoiceDate', 'fecha_factura']);
-            normalized.supplierName = findKey(data, ['supplierName', 'emisor_nombre', 'nombre_emisor']);
-            normalized.cuit = findKey(data, ['cuit', 'emisor_cuit', 'cuit_emisor']);
-            normalized.totalAmount = findKey(data, ['totalAmount', 'importe_total']);
-            normalized.ivaPerception = findKey(data, ['ivaPerception', 'percepcion_iva', 'percepciones_iva']);
-            normalized.grossIncomePerception = findKey(data, ['grossIncomePerception', 'percepcion_ingresos_brutos', 'percepciones_ingresos_brutos']);
+            normalized.invoiceNumber = findValue(data, ['invoiceNumber', 'numero_factura', 'numero_comprobante']);
+            normalized.invoiceDate = findValue(data, ['invoiceDate', 'fecha_factura']);
+            normalized.supplierName = findValue(data, ['supplierName', 'emisor_nombre', 'nombre_emisor']);
+            normalized.cuit = findValue(data, ['cuit', 'emisor_cuit', 'cuit_emisor']);
+            normalized.totalAmount = findValue(data, ['totalAmount', 'importe_total']);
+            normalized.ivaPerception = findValue(data, ['ivaPerception', 'percepcion_iva', 'percepciones_iva']);
+            normalized.grossIncomePerception = findValue(data, ['grossIncomePerception', 'percepcion_ingresos_brutos']);
             
-            const itemsArray = findKey(data, ['items']);
+            const itemsArray = findValue(data, ['items']);
             if (Array.isArray(itemsArray)) {
                 normalized.items = itemsArray.map(item => ({
-                    quantity: findKey(item, ['quantity', 'cantidad']),
-                    description: findKey(item, ['description', 'descripcion']),
-                    unitPrice: findKey(item, ['unitPrice', 'precio_unitario']),
-                    total: findKey(item, ['total', 'importe_total', 'importe_total_item', 'importe_total_linea'])
+                    quantity: findValue(item, ['quantity', 'cantidad']),
+                    description: findValue(item, ['description', 'descripcion']),
+                    unitPrice: findValue(item, ['unitPrice', 'precio_unitario']),
+                    total: findValue(item, ['total', 'importe_total', 'importe_total_item', 'importe_total_linea'])
                 }));
             }
-
             return normalized;
         };
         
@@ -117,7 +119,13 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
 
     } catch (error) {
         console.error('Error en el backend:', error.message);
-        res.status(500).json({ error: `Error interno del servidor: ${error.message}` });
+        if (error.status === 503) {
+            return res.status(503).json({ error: 'El servicio de IA está sobrecargado. Intenta de nuevo.' });
+        }
+        if (error instanceof SyntaxError) {
+             return res.status(500).json({ error: `La IA devolvió un JSON inválido que no se pudo reparar. Error: ${error.message}` });
+        }
+        res.status(500).json({ error: `Error interno del servidor.` });
     }
 });
 

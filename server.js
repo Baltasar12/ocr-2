@@ -57,7 +57,7 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = req.body.prompt || `
             Analiza esta factura. Extrae la información y devuélvela en formato JSON usando EXACTAMENTE los siguientes nombres de campo en camelCase:
-            - invoiceNumber, invoiceDate, supplierName, cuit, totalAmount, ivaPerception, grossIncomePerception
+            - invoiceNumber, invoiceDate (formato YYYY-MM-DD), supplierName, cuit, totalAmount, ivaPerception, grossIncomePerception
             - items (array de objetos, cada uno con: quantity, description, unitPrice, total)
         `;
         const imagePart = { inlineData: { data: req.file.buffer.toString("base64"), mimeType: req.file.mimetype } };
@@ -91,6 +91,15 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
             normalized.ivaPerception = findValue(data, ['ivaPerception', 'percepcion_iva', 'percepciones_iva']);
             normalized.grossIncomePerception = findValue(data, ['grossIncomePerception', 'percepcion_ingresos_brutos']);
             
+            // --- NUEVA LÓGICA PARA FORMATEAR FECHA ---
+            if (normalized.invoiceDate && typeof normalized.invoiceDate === 'string') {
+                const parts = normalized.invoiceDate.split('/');
+                if (parts.length === 3) {
+                    // Asume formato DD/MM/YYYY y lo convierte a YYYY-MM-DD
+                    normalized.invoiceDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                }
+            }
+
             const itemsArray = findValue(data, ['items']);
             if (Array.isArray(itemsArray)) {
                 normalized.items = itemsArray.map(item => ({
@@ -105,10 +114,8 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         
         jsonData = normalizeData(jsonData);
 
-        // --- VALIDACIÓN CORREGIDA ---
-        // Ahora solo falla si las propiedades NO EXISTEN (son undefined), pero permite que sean 'null'.
-        if (!jsonData || jsonData.invoiceNumber === undefined || jsonData.items === undefined) {
-            console.error("Error: Estructura inválida después de normalizar (faltan claves 'invoiceNumber' o 'items').", jsonData);
+        if (jsonData.invoiceNumber === undefined || jsonData.items === undefined) {
+            console.error("Error: Estructura inválida después de normalizar.", jsonData);
             return res.status(502).json({ error: 'La IA devolvió datos inconsistentes.' });
         }
 
@@ -121,7 +128,7 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
             return res.status(503).json({ error: 'El servicio de IA está sobrecargado. Intenta de nuevo.' });
         }
         if (error instanceof SyntaxError) {
-             return res.status(500).json({ error: `La IA devolvió un JSON inválido que no se pudo reparar. Error: ${error.message}` });
+             return res.status(500).json({ error: `La IA devolvió un JSON inválido. Error: ${error.message}` });
         }
         res.status(500).json({ error: `Error interno del servidor.` });
     }

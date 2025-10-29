@@ -57,7 +57,7 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
 
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = req.body.prompt || `
             Analiza esta factura. Extrae la información y devuélvela en formato JSON usando EXACTAMENTE los siguientes nombres de campo en camelCase:
             - invoiceNumber, invoiceDate, supplierName, cuit, totalAmount, ivaPerception, grossIncomePerception

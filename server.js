@@ -37,14 +37,11 @@ const fetchWithRetry = async (fn, retries = 3, delay = 2000) => {
   throw lastError;
 };
 
-// --- HELPER PARA REPARAR JSON ---
+// --- Helper para Reparar JSON ---
 function repairJson(jsonString) {
     return jsonString
-        // Añadir comillas a claves sin comillas (ej: { key: "value" })
         .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
-        // Reemplazar comillas simples por comillas dobles
         .replace(/'/g, '"')
-        // Eliminar comas finales en objetos y arrays (ej: { "a": 1, })
         .replace(/,\s*([}\]])/g, '$1');
 }
 
@@ -73,7 +70,6 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         console.log("Respuesta cruda de Gemini:", responseText);
         const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
         
-        // Usamos el reparador antes de parsear
         const repairedText = repairJson(cleanedText);
         let jsonData = JSON.parse(repairedText);
 
@@ -109,8 +105,10 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         
         jsonData = normalizeData(jsonData);
 
-        if (!jsonData || !jsonData.invoiceNumber || !Array.isArray(jsonData.items)) {
-            console.error("Error: Estructura inválida después de normalizar.", jsonData);
+        // --- VALIDACIÓN CORREGIDA ---
+        // Ahora solo falla si las propiedades NO EXISTEN (son undefined), pero permite que sean 'null'.
+        if (!jsonData || jsonData.invoiceNumber === undefined || jsonData.items === undefined) {
+            console.error("Error: Estructura inválida después de normalizar (faltan claves 'invoiceNumber' o 'items').", jsonData);
             return res.status(502).json({ error: 'La IA devolvió datos inconsistentes.' });
         }
 

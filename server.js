@@ -5,6 +5,7 @@ import multer from 'multer';
 import path from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { fileURLToPath } from 'url';
+import { fetchWithRetry, repairJson, normalizeData } from './server-utils.js'; // <-- IMPORTAMOS
 
 // --- Configuración Inicial ---
 const app = express();
@@ -18,33 +19,6 @@ app.use(express.json());
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// --- Helper para Reintentos ---
-const fetchWithRetry = async (fn, retries = 3, delay = 2000) => {
-  let lastError;
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      if (error.status === 503) {
-        console.log(`Intento ${i + 1} falló por sobrecarga. Reintentando en ${delay / 1000}s...`);
-        await new Promise(res => setTimeout(res, delay));
-      } else {
-        throw error;
-      }
-    }
-  }
-  throw lastError;
-};
-
-// --- Helper para Reparar JSON ---
-function repairJson(jsonString) {
-    return jsonString
-        .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
-        .replace(/'/g, '"')
-        .replace(/,\s*([}\]])/g, '$1');
-}
-
 // --- Ruta de la API para Procesar Facturas ---
 app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
     console.log("Recibida petición para procesar factura...");
@@ -54,10 +28,10 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
 
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const prompt = req.body.prompt || `
             Analiza esta factura. Extrae la información y devuélvela en formato JSON usando EXACTAMENTE los siguientes nombres de campo en camelCase:
-            - invoiceNumber, invoiceDate, supplierName, cuit, totalAmount, ivaPerception, grossIncomePerception
+            - invoiceNumber, invoiceDate (formato YYYY-MM-DD), supplierName, cuit, totalAmount, ivaPerception, grossIncomePerception
             - items (array de objetos, cada uno con: quantity, description, unitPrice, total)
         `;
         const imagePart = { inlineData: { data: req.file.buffer.toString("base64"), mimeType: req.file.mimetype } };
@@ -72,43 +46,11 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         
         const repairedText = repairJson(cleanedText);
         let jsonData = JSON.parse(repairedText);
-
-        const normalizeData = (data) => {
-            const normalized = {};
-            const findValue = (obj, keys) => {
-                const lowerCaseKeys = keys.map(k => k.toLowerCase());
-                for (const key in obj) {
-                    if (lowerCaseKeys.includes(key.toLowerCase())) return obj[key];
-                }
-                return undefined;
-            };
-
-            normalized.invoiceNumber = findValue(data, ['invoiceNumber', 'numero_factura', 'numero_comprobante']);
-            normalized.invoiceDate = findValue(data, ['invoiceDate', 'fecha_factura']);
-            normalized.supplierName = findValue(data, ['supplierName', 'emisor_nombre', 'nombre_emisor']);
-            normalized.cuit = findValue(data, ['cuit', 'emisor_cuit', 'cuit_emisor']);
-            normalized.totalAmount = findValue(data, ['totalAmount', 'importe_total']);
-            normalized.ivaPerception = findValue(data, ['ivaPerception', 'percepcion_iva', 'percepciones_iva']);
-            normalized.grossIncomePerception = findValue(data, ['grossIncomePerception', 'percepcion_ingresos_brutos']);
-            
-            const itemsArray = findValue(data, ['items']);
-            if (Array.isArray(itemsArray)) {
-                normalized.items = itemsArray.map(item => ({
-                    quantity: findValue(item, ['quantity', 'cantidad']),
-                    description: findValue(item, ['description', 'descripcion']),
-                    unitPrice: findValue(item, ['unitPrice', 'precio_unitario']),
-                    total: findValue(item, ['total', 'importe_total', 'importe_total_item', 'importe_total_linea'])
-                }));
-            }
-            return normalized;
-        };
         
         jsonData = normalizeData(jsonData);
 
-        // --- VALIDACIÓN CORREGIDA ---
-        // Ahora solo falla si las propiedades NO EXISTEN (son undefined), pero permite que sean 'null'.
-        if (!jsonData || jsonData.invoiceNumber === undefined || jsonData.items === undefined) {
-            console.error("Error: Estructura inválida después de normalizar (faltan claves 'invoiceNumber' o 'items').", jsonData);
+        if (jsonData.invoiceNumber === undefined || jsonData.items === undefined) {
+            console.error("Error: Estructura inválida después de normalizar.", jsonData);
             return res.status(502).json({ error: 'La IA devolvió datos inconsistentes.' });
         }
 
@@ -121,7 +63,7 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
             return res.status(503).json({ error: 'El servicio de IA está sobrecargado. Intenta de nuevo.' });
         }
         if (error instanceof SyntaxError) {
-             return res.status(500).json({ error: `La IA devolvió un JSON inválido que no se pudo reparar. Error: ${error.message}` });
+             return res.status(500).json({ error: `La IA devolvió un JSON inválido. Error: ${error.message}` });
         }
         res.status(500).json({ error: `Error interno del servidor.` });
     }

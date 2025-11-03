@@ -1,209 +1,45 @@
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import type { InvoiceData, LineItem, MasterDatabase } from './types';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AppState } from './types';
+import type { InvoiceData } from './types';
 import MasterUploader from './components/MasterUploader';
 import ImageUploader from './components/ImageUploader';
 import InvoiceDisplay from './components/InvoiceDisplay';
 import DataForm, { DataFormHandle } from './components/DataForm';
 import Spinner from './components/Spinner';
-import { findBestMatch } from './utils/stringMatcher';
 import { LogoIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, CheckCircleIcon } from './components/icons';
 import ResizablePanels from './components/ResizablePanels';
 
-// @ts-nocheck
-declare var pdfjsLib: any;
-
-const sanitizePdf = async (file: File): Promise<File> => {
-    try {
-        const arrayBuffer = await file.arrayBuffer();
-        const typedarray = new Uint8Array(arrayBuffer);
-        const pdf = await pdfjsLib.getDocument(typedarray).promise;
-        const page = await pdf.getPage(1);
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        if (!context) throw new Error("No se pudo obtener el contexto del canvas.");
-        const scale = 2.0;
-        const viewport = page.getViewport({ scale });
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        await page.render({ canvasContext: context, viewport: viewport }).promise;
-        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
-        if (!blob) throw new Error("Fallo al convertir el canvas a blob.");
-        return new File([blob], `sanitized_${file.name.replace(/\.pdf$/i, '.jpg')}`, { type: 'image/jpeg' });
-    } catch (error) {
-        console.error(`Falló la sanitización del PDF '${file.name}'. Razón:`, error);
-        return file;
-    }
-};
-
-async function processInChunks<T, R>(items: T[], chunkSize: number, processor: (item: T) => Promise<R>): Promise<R[]> {
-    const results: R[] = [];
-    for (let i = 0; i < items.length; i += chunkSize) {
-        const chunk = items.slice(i, i + chunkSize);
-        console.log(`Procesando lote: ${i / chunkSize + 1} de ${Math.ceil(items.length / chunkSize)}`);
-        const chunkPromises = chunk.map(processor);
-        const chunkResults = await Promise.all(chunkPromises);
-        results.push(...chunkResults);
-    }
-    return results;
-}
-
+// Nuestros nuevos hooks de lógica y estado
+import { useAppContext } from './context/AppContext';
+import { useAppLogic } from './context/useAppLogic';
 
 const App: React.FC = () => {
-  const [appState, setAppState] = useState<AppState>(AppState.AWAITING_MASTER_DATA);
-  const [masterData, setMasterData] = useState<MasterDatabase | null>(null);
-  const [batchData, setBatchData] = useState<InvoiceData[]>([]);
-  const [processedFiles, setProcessedFiles] = useState<File[]>([]);
-  const [failedFiles, setFailedFiles] = useState<{ name: string; reason: string }[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [processingStatus, setProcessingStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Obtenemos el estado desde el contexto
+  const {
+    appState, masterData, batchData, processedFiles, failedFiles,
+    currentIndex, processingStatus, error,
+    setAppState, setBatchData, setCurrentIndex
+  } = useAppContext();
+  
+  // Obtenemos las funciones de lógica desde el hook
+  const {
+    handleMasterDataLoad, handleFilesUpload, handleFullReset, handleResetBatch
+  } = useAppLogic();
+
   const [isAppReady, setIsAppReady] = useState(false);
   const dataFormRef = useRef<DataFormHandle>(null);
 
   useEffect(() => {
-    try {
-      const storedDb = localStorage.getItem('masterDatabase');
-      if (storedDb) {
-        const parsedDb = JSON.parse(storedDb);
-        const dbMap: MasterDatabase = new Map(parsedDb);
-        if (dbMap.size > 0) {
-          setMasterData(dbMap);
-          setAppState(AppState.IDLE);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load master database from localStorage", e);
-    } finally {
+    // La lógica de cargar desde localStorage ya está en el Context
+    // Solo necesitamos saber cuándo el masterData está listo
+    if (masterData !== null || appState === AppState.AWAITING_MASTER_DATA) {
       setIsAppReady(true);
     }
-  }, []);
+  }, [masterData, appState]);
 
-  const handleMasterDataLoad = useCallback((data: MasterDatabase) => {
-    setMasterData(data);
-    try {
-        const serializableData = [...data.entries()];
-        localStorage.setItem('masterDatabase', JSON.stringify(serializableData));
-    } catch (error) {
-        console.error("Failed to save master database to localStorage", error);
-    }
-    setAppState(AppState.IDLE);
-  }, []);
-
-  const handleFilesUpload = useCallback(async (files: File[]) => {
-    if (!masterData) {
-      setError("La base de datos maestra no está cargada.");
-      setAppState(AppState.ERROR);
-      return;
-    }
-
-    setAppState(AppState.PROCESSING);
-    setError(null);
-    setProcessingStatus(`Procesando ${files.length} documentos...`);
-
-    const processSingleFile = async (file: File) => {
-        try {
-            let fileToUpload = file;
-            if (file.type === 'application/pdf') {
-                fileToUpload = await sanitizePdf(file);
-            }
-            
-            const formData = new FormData();
-            formData.append('file', fileToUpload);
-
-            const response = await fetch('/api/procesar-factura', { method: 'POST', body: formData });
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: `Error del servidor (código ${response.status})` }));
-                throw new Error(errorData.error);
-            }
-            const ocrData = await response.json();
-            const normalizedCuit = (ocrData.cuit || '').replace(/-/g, '');
-            let identifiedSupplierCuit: string | undefined;
-            for (const [keyCuit] of masterData.entries()) {
-                if (keyCuit.replace(/-/g, '') === normalizedCuit) {
-                    identifiedSupplierCuit = keyCuit;
-                    break;
-                }
-            }
-            const supplierInfo = identifiedSupplierCuit ? masterData.get(identifiedSupplierCuit) : undefined;
-            const matchedItems: LineItem[] = (ocrData.items || []).map((ocrItem: any, itemIndex: number) => {
-                const defaultItem = {
-                    id: `item-${Date.now()}-${itemIndex}`,
-                    ocrDescription: ocrItem.description, ocrQuantity: ocrItem.quantity, ocrUnitPrice: ocrItem.unitPrice,
-                    productCode: '', productName: 'N/A',
-                    quantity: ocrItem.quantity, unitPrice: ocrItem.unitPrice, total: ocrItem.total,
-                };
-                if (supplierInfo) {
-                    // --- CORRECCIÓN FINAL DE TYPESCRIPT AQUÍ ---
-                    const bestMatch = findBestMatch(
-                        ocrItem.description, 
-                        supplierInfo.products, 
-                        (p: { productCode: string; productName: string }) => p.productName
-                    );
-                    if (bestMatch) {
-                        return { ...defaultItem, productCode: bestMatch.bestMatch.productCode, productName: bestMatch.bestMatch.productName };
-                    }
-                }
-                return defaultItem;
-            });
-            const finalInvoiceData: InvoiceData = { ...ocrData, items: matchedItems, identifiedSupplierCuit, usePreloadedCatalog: false };
-            return { success: true, file, data: finalInvoiceData };
-        } catch (error) {
-            console.error(`Falló el procesamiento del archivo '${file.name}'. Razón:`, error);
-            const reason = error instanceof Error ? error.message : 'Error desconocido';
-            return { success: false, file, reason };
-        }
-    };
-
-    const CHUNK_SIZE = 5; 
-    const results = await processInChunks(files, CHUNK_SIZE, processSingleFile);
-
-    const successfulInvoices = results.filter(r => r.success).map(r => r.data as InvoiceData);
-    const successfulFiles = results.filter(r => r.success).map(r => r.file);
-    const failedFilesResult = results.filter(r => !r.success).map(r => ({ name: r.file.name, reason: r.reason as string }));
-
-    setProcessingStatus(null);
-    setBatchData(successfulInvoices);
-    setProcessedFiles(successfulFiles);
-    setFailedFiles(failedFilesResult);
-
-    if (successfulInvoices.length > 0) {
-      setCurrentIndex(0);
-      setAppState(AppState.REVIEWING);
-    } else {
-      setError(`Falló el procesamiento de todos los ${files.length} documentos.`);
-      setAppState(AppState.ERROR);
-    }
-  }, [masterData]);
-
-
-  const handleFullReset = useCallback(() => {
-    setBatchData([]);
-    setProcessedFiles([]);
-    setFailedFiles([]);
-    setCurrentIndex(0);
-    setProcessingStatus(null);
-    setError(null);
-    setMasterData(null);
-    localStorage.removeItem('masterDatabase');
-    setAppState(AppState.AWAITING_MASTER_DATA);
-  }, []);
-
-  const handleResetBatch = useCallback(() => {
-    setBatchData([]);
-    setProcessedFiles([]);
-    setFailedFiles([]);
-    setCurrentIndex(0);
-    setProcessingStatus(null);
-    setError(null);
-    setAppState(AppState.IDLE);
-  }, []);
-  
-  const handleUpdateInvoiceData = useCallback((updatedData: InvoiceData) => {
-    setBatchData(prev => 
-      prev.map((invoice, index) => index === currentIndex ? updatedData : invoice)
-    );
-  }, [currentIndex]);
+  const handleUpdateInvoiceData = (updatedData: InvoiceData) => {
+    setBatchData(batchData.map((invoice, index) => (index === currentIndex ? updatedData : invoice)));
+  };
   
   const handleNext = () => {
     dataFormRef.current?.save();
@@ -220,15 +56,14 @@ const App: React.FC = () => {
   };
 
   const exportAllToCsv = () => {
-    if (dataFormRef.current) {
-        dataFormRef.current.save();
-    }
+    dataFormRef.current?.save();
+    
     setBatchData(currentBatchData => {
         if (currentBatchData.length === 0) return currentBatchData;
         const headers = ['Numero_Factura', 'Fecha_Factura', 'Fecha_Registro', 'Cod_Producto', 'Cantidad_Final', 'Precio_Final', 'Importe_Final'];
         const today = new Date().toISOString().split('T')[0];
         const allRows = currentBatchData.flatMap(invoice =>
-            invoice.items
+            (invoice.items || [])
                 .filter(item => item.productCode && item.quantity > 0)
                 .map(item => [
                     invoice.invoiceNumber, invoice.invoiceDate, today,
@@ -304,7 +139,6 @@ const App: React.FC = () => {
                  </button>
               )}
             </div>
-
             {failedFiles.length > 0 && (
                 <div className="flex-shrink-0 bg-amber-100 border-l-4 border-amber-500 text-amber-800 p-4 rounded-md mb-4">
                     <p className="font-bold">Aviso de Procesamiento</p>

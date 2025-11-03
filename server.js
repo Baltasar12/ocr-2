@@ -37,14 +37,11 @@ const fetchWithRetry = async (fn, retries = 3, delay = 2000) => {
   throw lastError;
 };
 
-// --- HELPER PARA REPARAR JSON ---
+// --- Helper para Reparar JSON ---
 function repairJson(jsonString) {
     return jsonString
-        // Añadir comillas a claves sin comillas (ej: { key: "value" })
         .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
-        // Reemplazar comillas simples por comillas dobles
         .replace(/'/g, '"')
-        // Eliminar comas finales en objetos y arrays (ej: { "a": 1, })
         .replace(/,\s*([}\]])/g, '$1');
 }
 
@@ -60,7 +57,7 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = req.body.prompt || `
             Analiza esta factura. Extrae la información y devuélvela en formato JSON usando EXACTAMENTE los siguientes nombres de campo en camelCase:
-            - invoiceNumber, invoiceDate (formato YYYY-MM-DD), supplierName, cuit, totalAmount, ivaPerception, grossIncomePerception
+            - invoiceNumber, invoiceDate, supplierName, cuit, totalAmount, ivaPerception, grossIncomePerception
             - items (array de objetos, cada uno con: quantity, description, unitPrice, total)
         `;
         const imagePart = { inlineData: { data: req.file.buffer.toString("base64"), mimeType: req.file.mimetype } };
@@ -73,7 +70,6 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         console.log("Respuesta cruda de Gemini:", responseText);
         const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
         
-        // Usamos el reparador antes de parsear
         const repairedText = repairJson(cleanedText);
         let jsonData = JSON.parse(repairedText);
 
@@ -95,15 +91,6 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
             normalized.ivaPerception = findValue(data, ['ivaPerception', 'percepcion_iva', 'percepciones_iva']);
             normalized.grossIncomePerception = findValue(data, ['grossIncomePerception', 'percepcion_ingresos_brutos']);
             
-            // --- NUEVA LÓGICA PARA FORMATEAR FECHA ---
-            if (normalized.invoiceDate && typeof normalized.invoiceDate === 'string') {
-                const parts = normalized.invoiceDate.split('/');
-                if (parts.length === 3) {
-                    // Asume formato DD/MM/YYYY y lo convierte a YYYY-MM-DD
-                    normalized.invoiceDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-                }
-            }
-
             const itemsArray = findValue(data, ['items']);
             if (Array.isArray(itemsArray)) {
                 normalized.items = itemsArray.map(item => ({
@@ -118,8 +105,10 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         
         jsonData = normalizeData(jsonData);
 
-        if (!jsonData || !jsonData.invoiceNumber || !Array.isArray(jsonData.items)) {
-            console.error("Error: Estructura inválida después de normalizar.", jsonData);
+        // --- VALIDACIÓN CORREGIDA ---
+        // Ahora solo falla si las propiedades NO EXISTEN (son undefined), pero permite que sean 'null'.
+        if (!jsonData || jsonData.invoiceNumber === undefined || jsonData.items === undefined) {
+            console.error("Error: Estructura inválida después de normalizar (faltan claves 'invoiceNumber' o 'items').", jsonData);
             return res.status(502).json({ error: 'La IA devolvió datos inconsistentes.' });
         }
 
@@ -132,7 +121,7 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
             return res.status(503).json({ error: 'El servicio de IA está sobrecargado. Intenta de nuevo.' });
         }
         if (error instanceof SyntaxError) {
-             return res.status(500).json({ error: `La IA devolvió un JSON inválido. Error: ${error.message}` });
+             return res.status(500).json({ error: `La IA devolvió un JSON inválido que no se pudo reparar. Error: ${error.message}` });
         }
         res.status(500).json({ error: `Error interno del servidor.` });
     }

@@ -308,10 +308,16 @@ const App: React.FC = () => {
             {failedFiles.length > 0 && (
                 <div className="flex-shrink-0 bg-amber-100 border-l-4 border-amber-500 text-amber-800 p-4 rounded-md mb-4">
                     <p className="font-bold">Aviso de Procesamiento</p>
-                    <p>{failedFiles.length} documento(s) no pudieron ser procesados y fueron omitidos.</p>
+                    <p>{failedFiles.length} documento(s) no pudieron ser procesados y fueron omitidos:</p>
+                    <ul className="list-disc list-inside text-sm mt-2">
+                      {failedFiles.map((file, index) => (
+                          <li key={index}>
+                              <strong>{file.name}:</strong> {file.reason}
+                          </li>
+                      ))}
+                    </ul>
                 </div>
             )}
-             
             <div className="flex-grow min-h-0">
                <ResizablePanels
                   leftPanel={<InvoiceDisplay file={currentFile} />}

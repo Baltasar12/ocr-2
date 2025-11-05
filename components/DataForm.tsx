@@ -180,10 +180,10 @@ const DataForm = forwardRef<DataFormHandle, DataFormProps>(({ data, onDataChange
   );
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col h-full">
+   <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col h-full overflow-y-auto">
       <h2 className="text-xl font-semibold mb-4 text-slate-700 border-b pb-2">Datos Extraídos y Mapeados</h2>
       
-      <div className="flex-grow overflow-y-auto pr-2">
+      <div className="flex-grow">
         {/* Header Data */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <InputField label="Nº de Comprobante" name="invoiceNumber" value={formData.invoiceNumber} onChange={handleHeaderChange} />

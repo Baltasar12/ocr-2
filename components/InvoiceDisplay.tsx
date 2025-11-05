@@ -108,7 +108,7 @@ const InvoiceDisplay: React.FC<InvoiceDisplayProps> = ({ file }) => {
   return (
     <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col h-full">
       <h2 className="text-xl font-semibold mb-4 text-slate-700 border-b pb-2">Vista Previa del Documento</h2>
-      <div ref={containerRef} className="relative flex-grow overflow-auto rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center p-2">
+      <div ref={containerRef} className="relative flex-grow overflow-auto rounded-md border border-slate-200 bg-slate-50 p-2">
         
         {/* Loading Overlay */}
         {isLoading && (
@@ -132,7 +132,7 @@ const InvoiceDisplay: React.FC<InvoiceDisplayProps> = ({ file }) => {
         <img 
             src={objectUrl || ''} 
             alt="Invoice preview" 
-            className="max-w-full max-h-full object-contain"
+            className="w-full h-auto"
             style={{
                 ...contentStyle,
                 display: file?.type.startsWith('image/') ? 'block' : 'none'

@@ -164,7 +164,8 @@ const DataForm = forwardRef<DataFormHandle, DataFormProps>(({ data, onDataChange
       productName: '',
       quantity: 1,
       unitPrice: 0,
-      total: 0
+      total: 0,
+      matchScore: 0
     };
     setFormData(prevData => ({ ...prevData, items: [...prevData.items, newItem] }));
   }
@@ -178,6 +179,21 @@ const DataForm = forwardRef<DataFormHandle, DataFormProps>(({ data, onDataChange
   const uniqueSupplierProducts = supplierProducts.filter((product, index, self) =>
     index === self.findIndex((p) => p.productName === product.productName)
   );
+
+  const getRowClass = (score: number | undefined): string => {
+    const baseClasses = "align-middle transition-colors duration-150";
+    
+    // Si no hay score o es muy bajo (incluyendo N/A), marcar en rojo.
+    if (score === undefined || score <= 0.5) { 
+      return `${baseClasses} bg-red-50 hover:bg-red-100`;
+    }
+    // Si el score es medio (ej. "GASEOSA" vs "GASEOSA COCA"), marcar en amarillo.
+    if (score <= 0.8) { 
+      return `${baseClasses} bg-yellow-50 hover:bg-yellow-100`;
+    }
+    // Si el score es alto, de-enfatizarlo para que el usuario no pierda tiempo.
+    return `${baseClasses} bg-white opacity-70 hover:opacity-100 focus-within:opacity-100`;
+  };
 
   return (
     <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col h-full">
@@ -250,7 +266,7 @@ const DataForm = forwardRef<DataFormHandle, DataFormProps>(({ data, onDataChange
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {formData.items.map((item, index) => (
-                    <tr key={item.id} className={`align-middle ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                    <tr key={item.id} className={getRowClass(item.matchScore)}>
                       <td className="py-4 pl-4 pr-3 text-sm sm:pl-0">
                          <div className="font-medium text-slate-800">{item.ocrDescription || 'N/A'}</div>
                          <div className="text-xs text-slate-400 mt-1">(Qty: {item.ocrQuantity}, PU: {item.ocrUnitPrice})</div>

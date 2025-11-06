@@ -67,6 +67,7 @@ export const useAppLogic = () => {
             ocrDescription: ocrItem.description, ocrQuantity: ocrItem.quantity, ocrUnitPrice: ocrItem.unitPrice,
             productCode: '', productName: 'N/A',
             quantity: ocrItem.quantity, unitPrice: ocrItem.unitPrice, total: ocrItem.total,
+            matchScore: 0
           };
           if (supplierInfo) {
             const bestMatch = findBestMatch(
@@ -75,7 +76,11 @@ export const useAppLogic = () => {
                 (p: { productCode: string; productName: string }) => p.productName
             );
             if (bestMatch) {
-              return { ...defaultItem, productCode: bestMatch.bestMatch.productCode, productName: bestMatch.bestMatch.productName };
+              return { ...defaultItem, 
+                productCode: bestMatch.bestMatch.productCode, 
+                productName: bestMatch.bestMatch.productName,
+                matchScore: bestMatch.score, 
+              };
             }
           }
           return defaultItem;

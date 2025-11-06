@@ -30,6 +30,8 @@ export interface LineItem {
   quantity: number;
   unitPrice: number;
   total: number;
+
+  matchScore?: number;
 }
 
 

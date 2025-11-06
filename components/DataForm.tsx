@@ -180,7 +180,7 @@ const DataForm = forwardRef<DataFormHandle, DataFormProps>(({ data, onDataChange
   );
 
   return (
-   <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col h-full overflow-y-auto">
+   <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col h-full">
       <h2 className="text-xl font-semibold mb-4 text-slate-700 border-b pb-2">Datos Extraídos y Mapeados</h2>
       
       <div className="flex-grow">

@@ -90,7 +90,7 @@ export const useAppLogic = () => {
       }
     };
 
-    const CHUNK_SIZE = 5; 
+    const CHUNK_SIZE = 3; 
     const results = await processInChunks(files, CHUNK_SIZE, processAndMapFile);
 
     const successfulInvoices = results.filter(r => r.success).map(r => r.data as InvoiceData);

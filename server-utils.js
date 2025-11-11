@@ -8,10 +8,12 @@ export const fetchWithRetry = async (fn, retries = 3, delay = 2000) => {
       return await fn();
     } catch (error) {
       lastError = error;
-      if (error.status === 503) {
-        console.log(`Intento ${i + 1} falló por sobrecarga. Reintentando en ${delay / 1000}s...`);
+      // Lista de códigos de errores
+      const retryableErrors = [429, 500, 503]; 
+      if (error.status && retryableErrors.includes(error.status)) {
+        console.log(`Intento ${i + 1} falló con error ${error.status}. Reintentando en ${delay / 1000}s...`);
         await new Promise(res => setTimeout(res, delay));
-      } else {
+      }else {
         throw error;
       }
     }

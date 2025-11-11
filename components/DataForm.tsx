@@ -63,9 +63,10 @@ const DataForm = forwardRef<DataFormHandle, DataFormProps>(({ data, onDataChange
             ...item,
             productCode: bestMatch.bestMatch.productCode,
             productName: bestMatch.bestMatch.productName,
+            matchScore: bestMatch.score // <-- AÑADIR ESTA LÍNEA
           };
         }
-        return { ...item, productCode: '', productName: 'N/A' };
+        return { ...item, productCode: '', productName: 'N/A', matchScore: 0 }; // <-- AÑADIR ESTA LÍNEA
       });
       
       return { 
@@ -182,17 +183,16 @@ const DataForm = forwardRef<DataFormHandle, DataFormProps>(({ data, onDataChange
 
   const getRowClass = (score: number | undefined): string => {
     const baseClasses = "align-middle transition-colors duration-150";
-    
-    // Si no hay score o es muy bajo (incluyendo N/A), marcar en rojo.
+    // Usamos '100' en lugar de '50'
     if (score === undefined || score <= 0.5) { 
-      return `${baseClasses} bg-red-50 hover:bg-red-100`;
+      return `${baseClasses} bg-red-100 hover:bg-red-200`;
     }
-    // Si el score es medio (ej. "GASEOSA" vs "GASEOSA COCA"), marcar en amarillo.
+    // Usamos '100' en lugar de '50'
     if (score <= 0.8) { 
-      return `${baseClasses} bg-yellow-50 hover:bg-yellow-100`;
+      return `${baseClasses} bg-yellow-100 hover:bg-yellow-200`;
     }
-    // Si el score es alto, de-enfatizarlo para que el usuario no pierda tiempo.
-    return `${baseClasses} bg-white opacity-70 hover:opacity-100 focus-within:opacity-100`;
+    // Usamos 'opacity-75' que es más estándar que '70'
+    return `${baseClasses} bg-white opacity-75 hover:opacity-100 focus-within:opacity-100`;
   };
 
   return (

@@ -28,6 +28,7 @@ const MasterUploader: React.FC<MasterUploaderProps> = ({ onLoad }) => {
         header.forEach((h, i) => entry[h] = values[i]?.trim());
         return entry;
     });
+    console.log("PASO 1: Datos CSV parseados (Array de Objetos)", data);
 
     const db: MasterDatabase = new Map();
 
@@ -36,6 +37,7 @@ const MasterUploader: React.FC<MasterUploaderProps> = ({ onLoad }) => {
         if (!cuit) return;
 
         if (!db.has(cuit)) {
+          console.log(`PASO 2: Creando nueva entrada para CUIT: ${cuit} - ${d.RAZON_SOCIAL}`);
             db.set(cuit, {
                 supplierCode: d.CODIGO_PROVEEDOR,
                 supplierName: d.RAZON_SOCIAL,
@@ -52,7 +54,7 @@ const MasterUploader: React.FC<MasterUploaderProps> = ({ onLoad }) => {
     if (db.size === 0) {
         throw new Error("No se pudieron analizar datos válidos del CSV. Revisa la columna CUIT y el formato de los datos.");
     }
-    
+    console.log("PASO 3: Base de Datos Maestra final (Objeto Map)", db);
     return db;
   };
 

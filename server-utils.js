@@ -40,8 +40,10 @@ export const normalizeData = (data) => {
         return undefined;
     };
 
-    normalized.invoiceNumber = findValue(data, ['invoiceNumber', 'numero_factura', 'numero_comprobante']);
-    normalized.invoiceDate = findValue(data, ['invoiceDate', 'fecha_factura']);
+    // Mapea el nuevo 'documentNumber' a 'invoiceNumber' para que el frontend no note la diferencia.
+    normalized.invoiceNumber = findValue(data, ['documentNumber', 'invoiceNumber', 'numero_factura', 'numero_comprobante', 'remito_n']);
+    // Agrega 'fecha' como una clave válida
+    normalized.invoiceDate = findValue(data, ['documentDate', 'invoiceDate', 'fecha_factura', 'fecha']);
     normalized.supplierName = findValue(data, ['supplierName', 'emisor_nombre', 'nombre_emisor']);
     normalized.cuit = findValue(data, ['cuit', 'emisor_cuit', 'cuit_emisor']);
     normalized.totalAmount = findValue(data, ['totalAmount', 'importe_total']);

@@ -30,9 +30,13 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = req.body.prompt || `
-            Analiza esta factura. Extrae la información y devuélvela en formato JSON usando EXACTAMENTE los siguientes nombres de campo en camelCase:
-            - invoiceNumber, invoiceDate (formato YYYY-MM-DD), supplierName, cuit, totalAmount, ivaPerception, grossIncomePerception
-            - items (array de objetos, cada uno con: quantity, description, unitPrice, total)
+            Analiza este documento (puede ser una FACTURA o un REMITO). Extrae la información y devuélvela en formato JSON usando EXACTAMENTE los siguientes nombres de campo en camelCase:
+            - documentNumber (Busca el número de "Factura" o "Remito"), 
+            - documentDate (Busca la "Fecha", formato YYYY-MM-DD), 
+            - supplierName (Nombre del proveedor o emisor), 
+            - cuit (CUIT del proveedor o emisor), 
+            - totalAmount (Busca el importe total. Si no existe, usa 0)
+            - items (array de objetos, cada uno con: quantity, description, unitPrice, total. Si unitPrice o total no existen, usa 0).
         `;
         const imagePart = { inlineData: { data: req.file.buffer.toString("base64"), mimeType: req.file.mimetype } };
 
@@ -46,11 +50,12 @@ app.post('/api/procesar-factura', upload.single('file'), async (req, res) => {
         
         const repairedText = repairJson(cleanedText);
         let jsonData = JSON.parse(repairedText);
-        
-        jsonData = normalizeData(jsonData);
+        // 1. NORMALIZAMOS PRIMERO
+        jsonData = normalizeData(jsonData); 
 
+        // 2. VALIDAMOS DESPUÉS (sobre los campos ya normalizados)
         if (jsonData.invoiceNumber === undefined || jsonData.items === undefined) {
-            console.error("Error: Estructura inválida después de normalizar.", jsonData);
+            console.error("Error: Estructura inválida después de normalizar. Faltan N° de comprobante o ítems.", jsonData);
             return res.status(502).json({ error: 'La IA devolvió datos inconsistentes.' });
         }
 

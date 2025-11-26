@@ -61,10 +61,16 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onFilesUpload, disabled }
   }, [onFilesUpload, disabled]);
 
   return (
-    <div className="flex flex-col items-center justify-center p-8 w-full h-full">
+    <div className="flex flex-col items-center justify-center p-8 w-full h-full text-center">
+        <UploadIcon className="w-20 h-20 text-violet-300 mb-6" />
+        <h2 className="text-3xl font-bold text-slate-800 mb-3">Carga de Facturas</h2>
+        <p className="text-slate-500 mb-8 max-w-xl">
+            Sube tus facturas en formato de imagen (PNG, JPG) o PDF. Puedes seleccionar múltiples archivos a la vez.
+            La IA se encargará de analizarlos y extraer la información relevante.
+        </p>
       <div
-        className={`w-full max-w-2xl p-10 border-2 border-dashed rounded-lg text-center transition-colors
-          ${isDragging ? 'border-indigo-600 bg-indigo-50' : 'border-slate-300 bg-white hover:border-indigo-400'}
+        className={`w-full max-w-2xl p-10 border-2 border-dashed rounded-2xl transition-all duration-300
+          ${isDragging ? 'border-violet-600 bg-violet-50 scale-105 shadow-xl' : 'border-slate-300 bg-slate-50 hover:border-violet-400 hover:bg-white'}
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -73,15 +79,14 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onFilesUpload, disabled }
         onClick={() => !disabled && document.getElementById('file-input')?.click()}
       >
         <div className="flex flex-col items-center justify-center">
-          <UploadIcon className="w-16 h-16 text-slate-400 mb-4" />
-          <h2 className="text-xl font-semibold text-slate-700 mb-2">Arrastra y suelta tus facturas aquí</h2>
+          <p className="font-semibold text-slate-700 mb-2">Arrastra y suelta tus archivos aquí</p>
           <p className="text-slate-500 mb-4">o</p>
           <button
             type="button"
-            className="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 transition-colors disabled:bg-indigo-300"
+            className="px-6 py-3 bg-violet-600 text-white font-semibold rounded-full hover:bg-violet-700 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:bg-violet-400 disabled:shadow-none disabled:transform-none"
             disabled={disabled}
           >
-            {disabled ? 'Inicializando...' : 'Buscar Archivos'}
+            {disabled ? 'Inicializando...' : 'Seleccionar Archivos'}
           </button>
           <input
             id="file-input"
@@ -93,8 +98,10 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onFilesUpload, disabled }
             disabled={disabled}
           />
         </div>
-        <p className="mt-6 text-sm text-slate-400">Formatos soportados: PNG, JPG, PDF</p>
       </div>
+        <p className="mt-6 text-xs text-slate-400">
+            Puedes subir hasta {UPLOAD_LIMIT} archivos a la vez. Formatos soportados: PNG, JPG, PDF.
+        </p>
     </div>
   );
 };

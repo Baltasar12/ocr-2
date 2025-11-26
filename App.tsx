@@ -116,24 +116,26 @@ const App: React.FC = () => {
       case AppState.EXPORTED:
         if (!currentInvoice || !masterData) return null;
         return (
-          <div className="flex flex-col w-full h-full p-4 md:p-8">
-            <div className="flex-shrink-0 flex flex-col sm:flex-row items-center justify-between mb-4 pb-4 border-b border-slate-200 gap-4">
+          <div className="flex flex-col w-full h-full">
+            <div className="flex-shrink-0 flex flex-col sm:flex-row items-center justify-between mb-6 pb-6 border-b border-slate-200 gap-4">
               <div className="flex items-center gap-4">
-                <button onClick={handlePrev} disabled={currentIndex === 0} className="p-2 rounded-md bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-50">
+                <button onClick={handlePrev} disabled={currentIndex === 0} className="p-2 rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50 transition-colors">
                   <ChevronLeftIcon className="w-5 h-5" />
                 </button>
-                <span className="font-medium text-slate-700">Factura {currentIndex + 1} de {batchData.length}</span>
-                <button onClick={handleNext} disabled={currentIndex === batchData.length - 1} className="p-2 rounded-md bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-50">
+                <span className="font-medium text-slate-700 text-lg">
+                  Factura {currentIndex + 1} <span className="text-slate-500">de</span> {batchData.length}
+                </span>
+                <button onClick={handleNext} disabled={currentIndex === batchData.length - 1} className="p-2 rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50 transition-colors">
                   <ChevronRightIcon className="w-5 h-5" />
                 </button>
               </div>
               {appState === AppState.EXPORTED ? (
-                <div className="bg-green-100 text-green-800 px-4 py-2 rounded-md flex items-center gap-2 text-sm font-semibold">
+                <div className="bg-green-100 text-green-800 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-semibold">
                   <CheckCircleIcon className="h-5 w-5" />
                   <span>¡Exportación Exitosa!</span>
                 </div>
               ) : (
-                 <button onClick={exportAllToCsv} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 flex items-center gap-2">
+                 <button onClick={exportAllToCsv} className="px-6 py-3 bg-violet-600 text-white font-semibold rounded-full hover:bg-violet-700 flex items-center gap-2 transition-colors shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
                     <DownloadIcon className="w-5 h-5"/>
                     Exportar Todo a CSV
                  </button>
@@ -163,17 +165,20 @@ const App: React.FC = () => {
       case AppState.ERROR:
         return (
           <div className="flex flex-col items-center justify-center h-full text-center p-8">
-            <h2 className="text-2xl font-bold text-red-600 mb-4">Ocurrió un Error</h2>
-            <p className="text-slate-700 bg-red-100 p-4 rounded-lg">{error}</p>
+            <h2 className="text-3xl font-bold text-red-600 mb-4">Ocurrió un Error</h2>
+            <p className="text-slate-700 bg-red-100 p-4 rounded-lg max-w-xl">{error}</p>
             {failedFiles.length > 0 && (
-              <div className="mt-4 text-left bg-slate-100 p-4 rounded-md w-full max-w-md">
-                <p className="font-semibold mb-2">Detalles de archivos fallidos:</p>
-                <ul className="list-disc list-inside text-sm text-slate-600">
+              <div className="mt-6 text-left bg-slate-100 p-4 rounded-lg w-full max-w-xl">
+                <p className="font-semibold mb-2 text-slate-800">Detalles de archivos fallidos:</p>
+                <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
                   {failedFiles.map(f => <li key={f.name}><strong>{f.name}:</strong> {f.reason}</li>)}
                 </ul>
               </div>
             )}
-            <button onClick={handleFullReset} className="mt-6 px-6 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700">
+            <button
+              onClick={handleFullReset}
+              className="mt-8 px-8 py-3 bg-violet-600 text-white font-semibold rounded-full hover:bg-violet-700 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+            >
               Empezar de Nuevo
             </button>
           </div>
@@ -184,14 +189,30 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col antialiased text-slate-800">
+    <div className="min-h-screen flex flex-col antialiased bg-slate-100 text-slate-800">
       <header className="p-4 border-b border-slate-200 bg-white shadow-sm sticky top-0 z-10">
         <div className="container mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3"><LogoIcon className="h-8 w-8 text-indigo-600" /><h1 className="text-2xl font-bold text-slate-800">Factura OCR AI</h1></div>
-            { (appState !== AppState.AWAITING_MASTER_DATA && appState !== AppState.IDLE) && ( <div className="flex items-center gap-3"><button onClick={handleResetBatch} className="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-md hover:bg-slate-200 text-sm">Iniciar Nuevo Lote</button><button onClick={handleFullReset} className="px-4 py-2 bg-amber-100 text-amber-800 font-semibold rounded-md hover:bg-amber-200 text-sm">Actualizar Base de Datos</button></div> )}
+          <div className="flex items-center gap-3">
+            <LogoIcon className="h-8 w-8 text-violet-600" />
+            <h1 className="text-2xl font-bold text-slate-800">Factura OCR AI</h1>
+          </div>
+          { (appState !== AppState.AWAITING_MASTER_DATA && appState !== AppState.IDLE) && (
+            <div className="flex items-center gap-3">
+              <button onClick={handleResetBatch} className="px-4 py-2 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300 text-sm transition-colors">
+                Iniciar Nuevo Lote
+              </button>
+              <button onClick={handleFullReset} className="px-4 py-2 bg-amber-200 text-amber-900 font-semibold rounded-lg hover:bg-amber-300 text-sm transition-colors">
+                Actualizar Base de Datos
+              </button>
+            </div>
+          )}
         </div>
       </header>
-      <main className="flex-grow container mx-auto flex items-center justify-center"><div className="w-full h-full max-w-7xl">{renderContent()}</div></main>
+      <main className="flex-grow container mx-auto flex items-center justify-center p-4">
+        <div className="w-full h-full max-w-7xl bg-white rounded-2xl shadow-lg p-8">
+          {renderContent()}
+        </div>
+      </main>
     </div>
   );
 };

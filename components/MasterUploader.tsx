@@ -99,10 +99,16 @@ const MasterUploader: React.FC<MasterUploaderProps> = ({ onLoad }) => {
   }, [onLoad]);
 
   return (
-    <div className="flex flex-col items-center justify-center p-8 w-full h-full">
+    <div className="flex flex-col items-center justify-center p-8 w-full h-full text-center">
+        <DatabaseIcon className="w-20 h-20 text-violet-300 mb-6" />
+        <h2 className="text-3xl font-bold text-slate-800 mb-3">Base de Datos Maestra</h2>
+        <p className="text-slate-500 mb-8 max-w-xl">
+            Para comenzar, necesitamos que cargues la base de datos maestra de productos en formato CSV.
+            Este archivo es esencial para que la IA pueda identificar y asociar correctamente los productos en las facturas.
+        </p>
       <div
-        className={`w-full max-w-2xl p-10 border-2 border-dashed rounded-lg text-center cursor-pointer transition-colors
-          ${isDragging ? 'border-indigo-600 bg-indigo-50' : 'border-slate-300 bg-white hover:border-indigo-400'}`}
+        className={`w-full max-w-2xl p-10 border-2 border-dashed rounded-2xl cursor-pointer transition-all duration-300
+          ${isDragging ? 'border-violet-600 bg-violet-50 scale-105 shadow-xl' : 'border-slate-300 bg-slate-50 hover:border-violet-400 hover:bg-white'}`}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
@@ -110,14 +116,13 @@ const MasterUploader: React.FC<MasterUploaderProps> = ({ onLoad }) => {
         onClick={() => document.getElementById('master-file-input')?.click()}
       >
         <div className="flex flex-col items-center justify-center">
-          <DatabaseIcon className="w-16 h-16 text-slate-400 mb-4" />
-          <h2 className="text-xl font-semibold text-slate-700 mb-2">Subir Base de Datos Maestra de Productos</h2>
-          <p className="text-slate-500 mb-4">Arrastra y suelta o haz clic para buscar</p>
+          <p className="font-semibold text-slate-700 mb-2">Arrastra y suelta el archivo CSV aquí</p>
+          <p className="text-slate-500 mb-4">o</p>
           <button
             type="button"
-            className="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 transition-colors"
+            className="px-6 py-3 bg-violet-600 text-white font-semibold rounded-full hover:bg-violet-700 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
           >
-            Buscar Archivo CSV
+            Seleccionar Archivo
           </button>
           <input
             id="master-file-input"
@@ -127,11 +132,11 @@ const MasterUploader: React.FC<MasterUploaderProps> = ({ onLoad }) => {
             onChange={(e) => e.target.files && handleFile(e.target.files[0])}
           />
         </div>
-        <p className="mt-6 text-xs text-slate-400">
-            Columnas CSV Requeridas: CUIT, RAZON_SOCIAL, CODIGO_PROVEEDOR, CODIGO_PRODUCTO, NOMBRE_PRODUCTO
-        </p>
       </div>
-      {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-md text-sm">{error}</div>}
+       {error && <div className="mt-4 p-3 bg-red-100 text-red-800 rounded-lg text-sm w-full max-w-2xl">{error}</div>}
+        <p className="mt-6 text-xs text-slate-400 max-w-2xl">
+            Asegúrate de que el archivo CSV contenga las siguientes columnas: CUIT, RAZON_SOCIAL, CODIGO_PROVEEDOR, CODIGO_PRODUCTO, NOMBRE_PRODUCTO
+        </p>
     </div>
   );
 };

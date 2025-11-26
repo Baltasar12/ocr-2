@@ -106,9 +106,9 @@ const InvoiceDisplay: React.FC<InvoiceDisplayProps> = ({ file }) => {
   };
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col h-full">
-      <h2 className="text-xl font-semibold mb-4 text-slate-700 border-b pb-2">Vista Previa del Documento</h2>
-      <div ref={containerRef} className="relative flex-grow overflow-auto rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center p-2">
+    <div className="bg-slate-50 p-6 rounded-2xl shadow-inner flex flex-col h-full border border-slate-200">
+      <h2 className="text-2xl font-bold mb-4 text-slate-800 border-b border-slate-200 pb-3">Vista Previa</h2>
+      <div ref={containerRef} className="relative flex-grow overflow-auto rounded-xl bg-white flex items-center justify-center p-2 shadow-sm">
         
         {/* Loading Overlay */}
         {isLoading && (

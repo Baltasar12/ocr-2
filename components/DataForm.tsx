@@ -180,40 +180,43 @@ const DataForm = forwardRef<DataFormHandle, DataFormProps>(({ data, onDataChange
   );
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col h-full">
-      <h2 className="text-xl font-semibold mb-4 text-slate-700 border-b pb-2">Datos Extraídos y Mapeados</h2>
+    <div className="bg-slate-50 p-6 rounded-2xl shadow-inner flex flex-col h-full border border-slate-200">
+      <h2 className="text-2xl font-bold mb-4 text-slate-800 border-b border-slate-200 pb-3">Datos de la Factura</h2>
       
-      <div className="flex-grow overflow-y-auto pr-2">
+      <div className="flex-grow overflow-y-auto pr-2 custom-scrollbar">
         {/* Header Data */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <InputField label="Nº de Comprobante" name="invoiceNumber" value={formData.invoiceNumber} onChange={handleHeaderChange} />
           <InputField label="Fecha de Factura" name="invoiceDate" type="date" value={formData.invoiceDate} onChange={handleHeaderChange} />
         </div>
 
         {/* Supplier Section */}
-        <div className="p-4 bg-slate-50 rounded-lg mb-4">
-          <h3 className="text-lg font-semibold mb-2 text-slate-600">Información del Proveedor</h3>
+        <div className="p-4 bg-white rounded-xl mb-6 shadow-sm border border-slate-200">
+          <h3 className="text-lg font-semibold mb-3 text-slate-800">Proveedor</h3>
           {identifiedSupplier ? (
-             <div className="flex items-center justify-between">
-                <p><span className="font-semibold">Identificado:</span> {identifiedSupplier.supplierName} (CUIT: {formData.identifiedSupplierCuit})</p>
-                 <button onClick={() => setFormData(prev => ({ ...prev, identifiedSupplierCuit: undefined }))} className="text-sm text-indigo-600 hover:underline">Cambiar</button>
+             <div className="flex items-center justify-between bg-violet-50 p-3 rounded-lg">
+                <div>
+                    <p className="font-semibold text-violet-800">{identifiedSupplier.supplierName}</p>
+                    <p className="text-sm text-slate-600">CUIT: {formData.identifiedSupplierCuit}</p>
+                </div>
+                 <button onClick={() => setFormData(prev => ({ ...prev, identifiedSupplierCuit: undefined }))} className="text-sm font-semibold text-violet-600 hover:text-violet-800 transition-colors">Cambiar</button>
              </div>
           ) : (
              <div>
-                <label htmlFor="supplier-search" className="block text-sm font-medium text-slate-700">Proveedor no identificado. Por favor, selecciona:</label>
+                <label htmlFor="supplier-search" className="block text-sm font-medium text-slate-600 mb-1">Buscar y seleccionar proveedor:</label>
                 <input
                     type="text"
                     id="supplier-search"
-                    placeholder="Buscar proveedor por nombre o CUIT..."
+                    placeholder="Buscar por nombre o CUIT..."
                     value={supplierSearchTerm}
                     onChange={e => setSupplierSearchTerm(e.target.value)}
-                    className="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    className="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-violet-500 focus:border-violet-500 sm:text-sm transition-colors"
                 />
                 <select 
                     id="supplier-select" 
                     onChange={handleSupplierChange} 
                     value="" 
-                    className="mt-2 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                    className="mt-2 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-violet-500 focus:border-violet-500 sm:text-sm rounded-lg transition-colors"
                     >
                     <option value="" disabled>-- Selecciona un Proveedor --</option>
                     {filteredSuppliers.map(s => <option key={s.cuit} value={s.cuit}>{s.name} - {s.cuit}</option>)}
@@ -224,55 +227,55 @@ const DataForm = forwardRef<DataFormHandle, DataFormProps>(({ data, onDataChange
         
         {/* Pre-load Catalog Toggle */}
         {formData.identifiedSupplierCuit && (
-          <div className="my-4 p-2 rounded-md bg-gray-100">
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" checked={formData.usePreloadedCatalog} onChange={handlePreloadToggle} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+          <div className="my-4 p-3 rounded-lg bg-slate-100 border border-slate-200">
+            <label className="flex items-center gap-3 text-sm text-slate-700 font-medium">
+              <input type="checkbox" checked={formData.usePreloadedCatalog} onChange={handlePreloadToggle} className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
               Precargar catálogo completo para este proveedor
             </label>
           </div>
         )}
 
         {/* Line Items Table */}
-        <h3 className="text-lg font-semibold my-4 text-slate-600">Mapeo de Ítems</h3>
+        <h3 className="text-lg font-semibold my-4 text-slate-800">Ítems de la Factura</h3>
         <div className="flow-root">
           <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
             <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
-              <table className="min-w-full divide-y divide-slate-300">
-                <thead>
-                  <tr className="text-left text-sm font-semibold text-slate-900">
-                    <th scope="col" className="py-3.5 pl-4 pr-3 sm:pl-0 w-2/5">Descripción (OCR)</th>
-                    <th scope="col" className="px-3 py-3.5 w-2/5">Producto (Sistema)</th>
-                    <th scope="col" className="px-3 py-3.5">Cant.</th>
-                    <th scope="col" className="px-3 py-3.5">Precio Unit.</th>
-                    <th scope="col" className="px-3 py-3.5">Total</th>
-                    <th scope="col" className="px-3 py-3.5 text-center">Acciones</th>
+              <table className="min-w-full divide-y divide-slate-200 border-b border-slate-200">
+                <thead className="bg-slate-100">
+                  <tr className="text-left text-sm font-semibold text-slate-600">
+                    <th scope="col" className="py-3 pl-4 pr-3 sm:pl-2 w-2/5">Descripción (OCR)</th>
+                    <th scope="col" className="px-3 py-3 w-2/5">Producto (Sistema)</th>
+                    <th scope="col" className="px-3 py-3">Cant.</th>
+                    <th scope="col" className="px-3 py-3">P. Unit.</th>
+                    <th scope="col" className="px-3 py-3">Total</th>
+                    <th scope="col" className="relative py-3 pl-3 pr-4 sm:pr-2"><span className="sr-only">Acciones</span></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {formData.items.map((item, index) => (
-                    <tr key={item.id} className={`align-middle ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
-                      <td className="py-4 pl-4 pr-3 text-sm sm:pl-0">
+                <tbody className="divide-y divide-slate-200 bg-white">
+                  {formData.items.map((item) => (
+                    <tr key={item.id} className="align-top hover:bg-slate-50 transition-colors">
+                      <td className="py-4 pl-4 pr-3 text-sm sm:pl-2">
                          <div className="font-medium text-slate-800">{item.ocrDescription || 'N/A'}</div>
-                         <div className="text-xs text-slate-400 mt-1">(Qty: {item.ocrQuantity}, PU: {item.ocrUnitPrice})</div>
+                         <div className="text-xs text-slate-400 mt-1">(Detectado: Qty: {item.ocrQuantity}, PU: {item.ocrUnitPrice})</div>
                       </td>
                       <td className="px-3 py-4 text-sm text-slate-500">
-                         <select value={item.productName} onChange={e => handleProductChange(item.id, e.target.value)} className="w-full p-2 border rounded-md text-sm bg-white" disabled={!formData.identifiedSupplierCuit}>
-                            <option value="N/A" disabled>{item.productCode ? item.productName : '-- Seleccionar Producto --'}</option>
+                         <select value={item.productName} onChange={e => handleProductChange(item.id, e.target.value)} className="w-full p-2 border-slate-300 rounded-lg text-sm bg-white focus:ring-violet-500 focus:border-violet-500 transition-colors" disabled={!formData.identifiedSupplierCuit}>
+                            <option value="N/A" disabled>{item.productCode ? item.productName : '-- Seleccionar --'}</option>
                             {uniqueSupplierProducts.map(p => <option key={p.productName} value={p.productName}>{p.productName}</option>)}
                          </select>
                          <div className="text-xs text-slate-500 mt-1">Código: {item.productCode || 'N/A'}</div>
                       </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
-                         <input type="number" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', e.target.value)} className="w-24 p-2 border rounded-md text-sm"/>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm">
+                         <input type="number" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', e.target.value)} className="w-24 p-2 border-slate-300 rounded-lg text-sm focus:ring-violet-500 focus:border-violet-500"/>
                       </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
-                         <input type="number" value={item.unitPrice} onChange={e => handleItemChange(item.id, 'unitPrice', e.target.value)} className="w-24 p-2 border rounded-md text-sm"/>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm">
+                         <input type="number" value={item.unitPrice} onChange={e => handleItemChange(item.id, 'unitPrice', e.target.value)} className="w-24 p-2 border-slate-300 rounded-lg text-sm focus:ring-violet-500 focus:border-violet-500"/>
                       </td>
-                       <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
-                          <input type="number" readOnly value={item.total} className="w-24 p-2 border rounded-md bg-slate-100 text-sm"/>
+                       <td className="whitespace-nowrap px-3 py-4 text-sm">
+                          <input type="number" readOnly value={item.total} className="w-24 p-2 border-slate-300 rounded-lg bg-slate-100 text-sm"/>
                       </td>
-                      <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-center text-sm font-medium sm:pr-0">
-                        <button onClick={() => removeItem(item.id)} className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-red-100"><TrashIcon className="w-5 h-5"/></button>
+                      <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-center text-sm font-medium sm:pr-2">
+                        <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-600 p-1 rounded-full hover:bg-red-100 transition-colors"><TrashIcon className="w-5 h-5"/></button>
                       </td>
                     </tr>
                   ))}
@@ -281,7 +284,7 @@ const DataForm = forwardRef<DataFormHandle, DataFormProps>(({ data, onDataChange
             </div>
           </div>
         </div>
-        <button onClick={addNewItem} disabled={!formData.identifiedSupplierCuit} className="mt-2 text-sm text-indigo-600 font-semibold hover:text-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed">+ Añadir Nuevo Ítem</button>
+        <button onClick={addNewItem} disabled={!formData.identifiedSupplierCuit} className="mt-4 px-4 py-2 text-sm bg-violet-100 text-violet-700 font-semibold rounded-lg hover:bg-violet-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">+ Añadir Ítem Manual</button>
       </div>
     </div>
   );
@@ -298,14 +301,14 @@ interface InputFieldProps {
 
 const InputField: React.FC<InputFieldProps> = ({ label, name, value, onChange, type = 'text' }) => (
     <div>
-        <label htmlFor={name} className="block text-sm font-medium text-slate-700">{label}</label>
+        <label htmlFor={name} className="block text-sm font-medium text-slate-600 mb-1">{label}</label>
         <input
             type={type}
             id={name}
             name={name}
             value={value ?? ''}
             onChange={onChange}
-            className="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            className="block w-full px-3 py-2 bg-white border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-violet-500 focus:border-violet-500 sm:text-sm transition-colors"
         />
     </div>
 );

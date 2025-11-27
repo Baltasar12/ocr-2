@@ -26,5 +26,14 @@
     "dotenv": "^17.2.3",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
+  },
+  "author": {
+    "name": "factura-ocr-ai",
+    "version": "1.0.0",
+    "author": "Baltasar Barbaglia, baltasarbarbaglia@gmail.com",
+    "contributors": [
+      "Empresa Gastronómica <sistemas@empresa.com>"
+    ],
+    "license": "ISC" 
   }
 }
